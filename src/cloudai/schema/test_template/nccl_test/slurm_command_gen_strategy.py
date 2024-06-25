@@ -82,8 +82,12 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         cmd_args: Dict[str, str],
         extra_cmd_args: str,
     ) -> str:
+        ntasks_per_node = cmd_args.get("ntasks_per_node")
+        if ntasks_per_node is None:
+            raise KeyError("ntasks_per_node not specified in command-line arguments.")
+
         srun_command_parts = [
-            "srun",
+            "srun --ntasks-per-node={cmd_args['ntasks_per_node']}  ",
             "--mpi=pmix",
             f"--container-image={slurm_args['image_path']}",
         ]

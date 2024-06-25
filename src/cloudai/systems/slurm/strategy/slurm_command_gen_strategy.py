@@ -186,8 +186,6 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             batch_script_content.append(f"#SBATCH --account={args['account']}")
         if "distribution" in args:
             batch_script_content.append(f"#SBATCH --distribution={args['distribution']}")
-        if "gpus_per_node" in args:
-            batch_script_content.append(f"#SBATCH --gpus-per-node={args['gpus_per_node']}")
         if "ntasks_per_node" in args:
             batch_script_content.append(f"#SBATCH --ntasks-per-node={args['ntasks_per_node']}")
         if "time_limit" in args:
