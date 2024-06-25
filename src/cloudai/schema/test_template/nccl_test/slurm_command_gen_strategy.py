@@ -87,7 +87,7 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             raise KeyError("ntasks_per_node not specified in command-line arguments.")
 
         srun_command_parts = [
-            "srun --ntasks-per-node={cmd_args['ntasks_per_node']}  ",
+            f"srun --ntasks-per-node={cmd_args['ntasks_per_node']} ",
             "--mpi=pmix",
             f"--container-image={slurm_args['image_path']}",
         ]
