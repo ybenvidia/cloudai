@@ -36,4 +36,5 @@ class NcclTest(TestTemplate):
         "reduce_scatter_perf_mpi",
         "scatter_perf_mpi",
         "sendrecv_perf_mpi",
+        "bisection_perf_mpi"
     ]
