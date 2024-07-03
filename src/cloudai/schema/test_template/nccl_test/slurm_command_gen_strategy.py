@@ -90,7 +90,7 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         srun_command_parts = [
             f"srun --ntasks-per-node={cmd_args['ntasks_per_node']} ",
             "--mpi=pmix",
-            f"--container-image={slurm_args['image_path']}",
+            f"--container-image=/raid/nccl-test",
         ]
 
         if slurm_args.get("container_mounts"):
