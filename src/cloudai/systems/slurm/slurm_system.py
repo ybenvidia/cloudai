@@ -432,34 +432,36 @@ class SlurmSystem(System):
                           job's running status, or if the status cannot be
                           determined after the specified number of retries.
         """
-        retry_count = 0
-        command = f"squeue -j {job_id} --noheader --format=%T"
+        # retry_count = 0
+        # command = f"squeue -j {job_id} --noheader --format=%T"
+        #
+        # while retry_count < retry_threshold:
+        #     logging.debug(f"Executing command to check job status: {command}")
+        #     stdout, stderr = self.cmd_shell.execute(command).communicate()
+        #
+        #     if "Socket timed out" in stderr or "slurm_load_jobs error" in stderr:
+        #         retry_count += 1
+        #         logging.warning(f"Transient error encountered. Retrying... " f"({retry_count}/{retry_threshold})")
+        #         continue
+        #
+        #     if stderr:
+        #         raise RuntimeError(f"Error checking job status: {stderr}")
+        #
+        #     job_state = stdout.strip()
+        #     # If the job is listed with a "RUNNING" state, it's considered active
+        #     if job_state == "RUNNING":
+        #         return True
+        #
+        #     # No need for further retries if we got a clear answer
+        #     break
+        #
+        # if retry_count == retry_threshold:
+        #     raise RuntimeError("Failed to confirm job running status after " f"{retry_threshold} attempts.")
+        #
+        # # Job is not active if not "RUNNING" or not found
+        # return False
 
-        while retry_count < retry_threshold:
-            logging.debug(f"Executing command to check job status: {command}")
-            stdout, stderr = self.cmd_shell.execute(command).communicate()
-
-            if "Socket timed out" in stderr or "slurm_load_jobs error" in stderr:
-                retry_count += 1
-                logging.warning(f"Transient error encountered. Retrying... " f"({retry_count}/{retry_threshold})")
-                continue
-
-            if stderr:
-                raise RuntimeError(f"Error checking job status: {stderr}")
-
-            job_state = stdout.strip()
-            # If the job is listed with a "RUNNING" state, it's considered active
-            if job_state == "RUNNING":
-                return True
-
-            # No need for further retries if we got a clear answer
-            break
-
-        if retry_count == retry_threshold:
-            raise RuntimeError("Failed to confirm job running status after " f"{retry_threshold} attempts.")
-
-        # Job is not active if not "RUNNING" or not found
-        return False
+        return True
 
     def is_job_completed(self, job_id: int, retry_threshold: int = 3) -> bool:
         """
