@@ -167,6 +167,9 @@ class BaseRunner(ABC):
             test (Test): The test to be started.
         """
         logging.info(f"Starting test: {test.section_name}")
+        if test.section_name == "Tests.1":
+            logging.info(f"Waiting 10 sec test 1")
+            await asyncio.sleep(10)
         try:
             job = self._submit_test(test)
             self.jobs.append(job)
