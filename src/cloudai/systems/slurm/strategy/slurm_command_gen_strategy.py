@@ -204,4 +204,4 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         with open(batch_script_path, "w") as batch_file:
             batch_file.write("\n".join(batch_script_content))
 
-        return f"bash {batch_script_path}"
+        return f"sbatch {batch_script_path}"
