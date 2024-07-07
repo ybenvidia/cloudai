@@ -89,7 +89,6 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
 
         srun_command_parts = [
             f"srun --ntasks-per-node={cmd_args['ntasks_per_node']} ",
-            f"--gres=gpu:{cmd_args['gpus_per_node']} ",
             "--mpi=pmix",
             f"--container-image=/raid/nccl-test/nccl_test.sqsh",
         ]
