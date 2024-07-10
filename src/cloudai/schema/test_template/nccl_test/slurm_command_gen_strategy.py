@@ -93,6 +93,8 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             "--mpi=pmix",
         ]
 
+        srun_command_parts.append(f"--job-name={slurm_args['job_name']}")
+
         if slurm_args["node_list_str"]:
             srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
 
