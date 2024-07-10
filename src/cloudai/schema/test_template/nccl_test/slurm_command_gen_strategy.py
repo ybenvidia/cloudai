@@ -120,6 +120,12 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             if arg in cmd_args:
                 srun_command_parts.append(f"--{arg} {cmd_args[arg]}")
 
+        if slurm_args["node_list_str"]:
+            srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
+
+        if slurm_args["exclude_nodes_list_str"]:
+            srun_command_parts.append(f"--exclude={slurm_args['exclude_nodes_list_str']}")
+
         if extra_cmd_args:
             srun_command_parts.append(extra_cmd_args)
 

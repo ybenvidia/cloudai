@@ -169,34 +169,38 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         Returns:
             str: sbatch command to submit the job.
         """
+
         batch_script_content = [
             "#!/bin/bash",
-            f"#SBATCH --job-name={args['job_name']}",
-            f"#SBATCH -N {args['num_nodes']}",
+
         ]
 
-        if "output" not in args:
-            batch_script_content.append(f"#SBATCH --output={os.path.join(output_path, 'stdout.txt')}")
-        if "error" not in args:
-            batch_script_content.append(f"#SBATCH --error={os.path.join(output_path, 'stderr.txt')}")
-        if args["partition"]:
-            batch_script_content.append(f"#SBATCH --partition={args['partition']}")
-        if args["node_list_str"]:
-            batch_script_content.append(f"#SBATCH --nodelist={args['node_list_str']}")
-        if "account" in args:
-            batch_script_content.append(f"#SBATCH --account={args['account']}")
-        if "distribution" in args:
-            batch_script_content.append(f"#SBATCH --distribution={args['distribution']}")
-        if "gpus_per_node" in args:
-            batch_script_content.append(f"#SBATCH --gpus-per-node={args['gpus_per_node']}")
-        if "ntasks_per_node" in args:
-            batch_script_content.append(f"#SBATCH --ntasks-per-node={args['ntasks_per_node']}")
-        if "time_limit" in args:
-            batch_script_content.append(f"#SBATCH --time={args['time_limit']}")
+        if args['partition'] != 'defq':
+            batch_script_content.append(f"#SBATCH --job-name={args['job_name']}")
+            batch_script_content.append(f"#SBATCH -N {args['num_nodes']}")
 
-        batch_script_content.append(
-            "\nexport SLURM_JOB_MASTER_NODE=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n 1)"
-        )
+            if "output" not in args:
+                batch_script_content.append(f"#SBATCH --output={os.path.join(output_path, 'stdout.txt')}")
+            if "error" not in args:
+                batch_script_content.append(f"#SBATCH --error={os.path.join(output_path, 'stderr.txt')}")
+            if args["partition"]:
+                batch_script_content.append(f"#SBATCH --partition={args['partition']}")
+            if args["node_list_str"]:
+                batch_script_content.append(f"#SBATCH --nodelist={args['node_list_str']}")
+            if "account" in args:
+                batch_script_content.append(f"#SBATCH --account={args['account']}")
+            if "distribution" in args:
+                batch_script_content.append(f"#SBATCH --distribution={args['distribution']}")
+            if "gpus_per_node" in args:
+                batch_script_content.append(f"#SBATCH --gpus-per-node={args['gpus_per_node']}")
+            if "ntasks_per_node" in args:
+                batch_script_content.append(f"#SBATCH --ntasks-per-node={args['ntasks_per_node']}")
+            if "time_limit" in args:
+                batch_script_content.append(f"#SBATCH --time={args['time_limit']}")
+
+            batch_script_content.append(
+                "\nexport SLURM_JOB_MASTER_NODE=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n 1)"
+            )
 
         batch_script_content.extend(["", env_vars_str, "", srun_command])
 
@@ -204,4 +208,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         with open(batch_script_path, "w") as batch_file:
             batch_file.write("\n".join(batch_script_content))
 
-        return f"sbatch {batch_script_path}"
+        if args['partition'] != 'defq':
+            return f"sbatch {batch_script_path}"
+
+        return f"bash {batch_script_path}"
