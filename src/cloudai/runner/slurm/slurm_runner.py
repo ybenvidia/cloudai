@@ -67,15 +67,15 @@ class SlurmRunner(BaseRunner):
         job_id = 0
         if self.mode == "run":
             stdout, stderr = self.cmd_shell.execute(exec_cmd).communicate()
-            # job_id = test.get_job_id(stdout, stderr)
-            # if job_id is None:
-            #     raise JobIdRetrievalError(
-            #         test_name=str(test.section_name),
-            #         command=exec_cmd,
-            #         stdout=stdout,
-            #         stderr=stderr,
-            #         message="Failed to retrieve job ID from command output.",
-            #     )
+            job_id = test.get_job_id(stdout, stderr)
+            if job_id is None:
+                raise JobIdRetrievalError(
+                    test_name=str(test.section_name),
+                    command=exec_cmd,
+                    stdout=stdout,
+                    stderr=stderr,
+                    message="Failed to retrieve job ID from command output.",
+                )
         return SlurmJob(job_id, test, job_output_path)
 
     def is_job_running(self, job: BaseJob) -> bool:
