@@ -50,7 +50,7 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         else:
             env_vars_str = self._format_env_vars_calyce(final_env_vars)
 
-        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args)
+        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args, output_path)
         return self._write_sbatch_script(slurm_args, env_vars_str, srun_command, output_path)
 
     def _parse_slurm_args(
@@ -86,7 +86,8 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         slurm_args: Dict[str, Any],
         env_vars: Dict[str, str],
         cmd_args: Dict[str, str],
-        extra_cmd_args: str
+        extra_cmd_args: str,
+        output_path: str
     ) -> str:
         ntasks_per_node = cmd_args.get("ntasks_per_node")
         if ntasks_per_node is None:
@@ -97,6 +98,14 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             "--mpi=pmix",
             f"--container-image={slurm_args['image_path']}",
         ]
+
+        if slurm_args["node_list_str"]:
+            srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
+
+        if "output" not in slurm_args:
+            srun_command_parts.append(f"--output={os.path.join(output_path, 'stdout.txt')}")
+        if "error" not in slurm_args:
+            srun_command_parts.append(f"--error={os.path.join(output_path, 'stderr.txt')}")
 
         if slurm_args.get("container_mounts"):
             srun_command_parts.append(f"--container-mounts={slurm_args['container_mounts']}")
@@ -124,9 +133,6 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         for arg in nccl_test_args:
             if arg in cmd_args:
                 srun_command_parts.append(f"--{arg} {cmd_args[arg]}")
-
-        if slurm_args["node_list_str"]:
-            srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
 
         if extra_cmd_args:
             srun_command_parts.append(extra_cmd_args)
