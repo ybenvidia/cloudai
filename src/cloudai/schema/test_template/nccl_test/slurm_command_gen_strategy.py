@@ -91,7 +91,6 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         srun_command_parts = [
             f"srun --ntasks-per-node={cmd_args['ntasks_per_node']} ",
             "--mpi=pmix",
-            f"--container-image={slurm_args['image_path']}",
         ]
 
         if slurm_args["node_list_str"]:
@@ -101,6 +100,8 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             srun_command_parts.append(f"--output={os.path.join(output_path, 'stdout.txt')}")
         if "error" not in slurm_args:
             srun_command_parts.append(f"--error={os.path.join(output_path, 'stderr.txt')}")
+
+        srun_command_parts.append(f"--container-image={slurm_args['image_path']}")
 
         if slurm_args.get("container_mounts"):
             srun_command_parts.append(f"--container-mounts={slurm_args['container_mounts']}")
