@@ -38,18 +38,13 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         final_env_vars = self._override_env_vars(self.default_env_vars, env_vars)
         final_env_vars = self._override_env_vars(final_env_vars, extra_env_vars)
         final_cmd_args = self._override_cmd_args(self.default_cmd_args, cmd_args)
+        env_vars_str = self._format_env_vars(final_env_vars)
 
         subtest_name = final_cmd_args.get("subtest_name")
         if subtest_name not in NcclTest.SUPPORTED_SUBTESTS:
             raise KeyError("Subtest name not specified or unsupported.")
 
         slurm_args = self._parse_slurm_args(subtest_name, final_env_vars, final_cmd_args, num_nodes, nodes)
-
-        if slurm_args['partition'] != 'defq':
-            env_vars_str = self._format_env_vars(final_env_vars)
-        else:
-            env_vars_str = self._format_env_vars_calyce(final_env_vars)
-
         srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args, output_path)
         return self._write_sbatch_script(slurm_args, env_vars_str, srun_command, output_path)
 

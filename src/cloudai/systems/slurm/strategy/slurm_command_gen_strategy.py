@@ -78,23 +78,6 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             formatted_vars.append(f"export {key}={formatted_value}")
         return "\n".join(formatted_vars)
 
-    def _format_env_vars_calyce(self, env_vars: Dict[str, Any]) -> str:
-        """
-        Format environment variables for inclusion in a batch script.
-
-        Args:
-            env_vars (Dict[str, Any]): Environment variables to format.
-
-        Returns:
-            str: A string representation of the formatted environment variables.
-        """
-        formatted_vars = []
-        for key in sorted(env_vars.keys()):
-            value = env_vars[key]
-            formatted_value = str(value["default"]) if isinstance(value, dict) and "default" in value else str(value)
-            formatted_vars.append(f"{key}={formatted_value}")
-        return " \\\n".join(formatted_vars)
-
     def _parse_slurm_args(
         self,
         job_name_prefix: str,
@@ -220,9 +203,6 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             )
 
             batch_script_content.extend(["", env_vars_str, "", srun_command])
-
-        else:
-            batch_script_content.extend(["", env_vars_str, "\\", srun_command])
 
         batch_script_path = os.path.join(output_path, "cloudai_sbatch_script.sh")
         with open(batch_script_path, "w") as batch_file:
