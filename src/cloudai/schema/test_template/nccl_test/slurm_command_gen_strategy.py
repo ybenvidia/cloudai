@@ -50,7 +50,7 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         else:
             env_vars_str = self._format_env_vars_calyce(final_env_vars)
 
-        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args, output_path)
+        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args)
         return self._write_sbatch_script(slurm_args, env_vars_str, srun_command, output_path)
 
     def _parse_slurm_args(
@@ -86,8 +86,7 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         slurm_args: Dict[str, Any],
         env_vars: Dict[str, str],
         cmd_args: Dict[str, str],
-        extra_cmd_args: str,
-        output_path: str
+        extra_cmd_args: str
     ) -> str:
         ntasks_per_node = cmd_args.get("ntasks_per_node")
         if ntasks_per_node is None:
@@ -132,8 +131,4 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         if extra_cmd_args:
             srun_command_parts.append(extra_cmd_args)
 
-        output_file = os.path.join(output_path, 'stdout.txt')
-        error_file = os.path.join(output_path, 'stderr.txt')
-
-        return " \\\n".join(srun_command_parts) + \
-                       " > {} 2> {}".format(output_file, error_file)
+        return " \\\n".join(srun_command_parts)
