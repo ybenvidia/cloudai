@@ -148,9 +148,11 @@ class BaseRunner(ABC):
 
         logging.info("Starting test scenario execution.")
         total_tests = len(self.test_scenario.tests)
+        print("TEST SCENARIO TEST _ RUN : " , self.test_scenario.tests)
         completed_jobs_count = 0
 
         dependency_free_tests = self.find_dependency_free_tests()
+        print("TEST DEPENDENCY FREE TESTS _ RUN : ", dependency_free_tests)
         for test in dependency_free_tests:
             await self.submit_test(test)
 
