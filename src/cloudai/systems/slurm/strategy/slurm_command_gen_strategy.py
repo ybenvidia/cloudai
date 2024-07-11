@@ -211,4 +211,4 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             return f"sbatch {batch_script_path}"
 
         os.chmod(batch_script_path, 776)
-        return f"/usr/bin/bash -c {batch_script_path} &"
+        return f"{batch_script_path} &"
