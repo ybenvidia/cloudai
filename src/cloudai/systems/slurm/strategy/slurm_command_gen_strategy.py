@@ -210,5 +210,5 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         if args['partition'] != 'defq':
             return f"sbatch {batch_script_path}"
 
-        os.chmod(batch_script_path, 776)
+        os.chmod(batch_script_path, 0o775)
         return f"{batch_script_path} &"
