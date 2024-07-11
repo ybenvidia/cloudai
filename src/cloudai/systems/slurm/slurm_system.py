@@ -434,8 +434,6 @@ class SlurmSystem(System):
         """
         retry_count = 0
         print(f"JOB ID RUNNING: {job_id}")
-        while True:
-            print("infinite loop")
         command = f"squeue -j {job_id} --noheader --format=%T"
 
         print(f"RETRY COUNT: {retry_count}")
