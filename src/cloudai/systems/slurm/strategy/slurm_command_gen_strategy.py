@@ -211,6 +211,4 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             return f"sbatch {batch_script_path}"
 
 
-        return f"bash {batch_script_path} &"
-
-        #return ["bash", batch_script_path]
+        return f"/usr/bin/bash -c {batch_script_path} &"
