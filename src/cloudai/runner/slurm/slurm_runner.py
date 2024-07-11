@@ -69,15 +69,29 @@ class SlurmRunner(BaseRunner):
             stdout, stderr = self.cmd_shell.execute(exec_cmd).communicate()
             job_id = test.get_job_id(stdout, stderr)
             if job_id is None:
-                raise JobIdRetrievalError(
-                    test_name=str(test.section_name),
-                    command=exec_cmd,
-                    stdout=stdout,
-                    stderr=stderr,
-                    message="Failed to retrieve job ID from command output.",
-                )
+                job_id = self.get_max_job_id()
+                if job_id is None:
+                    raise JobIdRetrievalError(
+                        test_name=str(test.section_name),
+                        command=exec_cmd,
+                        stdout=stdout,
+                        stderr=stderr,
+                        message="Failed to retrieve job ID from command output.",
+                    )
         return SlurmJob(job_id, test, job_output_path)
 
+    def get_max_job_id(self):
+        try:
+            squeue_output, _ = self.fetch_command_output("squeue --me --noheader --format %A")
+            job_ids = squeue_output.strip().split()
+            job_ids = [int(job_id) for job_id in job_ids if job_id.isdigit()]
+            if job_ids:
+                return max(job_ids)
+
+        except ValueError as e:
+            print(f"Error processing job IDs: {e}")
+
+        return None
     def is_job_running(self, job: BaseJob) -> bool:
         """
         Check if the specified job is currently running.
