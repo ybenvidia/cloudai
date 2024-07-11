@@ -154,8 +154,10 @@ class BaseRunner(ABC):
         dependency_free_tests = self.find_dependency_free_tests()
         print("TEST DEPENDENCY FREE TESTS _ RUN : ", dependency_free_tests)
         for test in dependency_free_tests:
+            print("ICI DANS LE FOR DEPENDENCY FREE")
             await self.submit_test(test)
 
+        print("APRES LE AWAIT")
         while completed_jobs_count < total_tests:
             print("Je suis dans le WHILE")
             await self.check_start_post_init_dependencies()
