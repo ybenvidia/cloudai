@@ -65,6 +65,7 @@ class SlurmRunner(BaseRunner):
         exec_cmd = test.gen_exec_command(job_output_path)
         logging.info(f"Executing command for test {test.section_name}: {exec_cmd}")
         job_id = self.get_max_job_id()
+        print(f"PREVIOUS JOB ID: {job_id}")
         if self.mode == "run":
             stdout, stderr = self.cmd_shell.execute(exec_cmd).communicate()
             job_id = job_id + 1
