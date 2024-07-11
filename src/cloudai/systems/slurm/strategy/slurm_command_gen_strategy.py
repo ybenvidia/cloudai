@@ -210,4 +210,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         if args['partition'] != 'defq':
             return f"sbatch {batch_script_path}"
 
-        return f"bash {batch_script_path} &"
+
+        #return f"bash {batch_script_path} &"
+
+        return f"{batch_script_path}"
