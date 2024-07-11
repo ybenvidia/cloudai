@@ -84,7 +84,7 @@ class SlurmRunner(BaseRunner):
         try:
             squeue_output, _ = self.cmd_shell.execute("sacct -X --start now-1days -o jobid | tail -n 1").communicate()
             print(f"OUTPUT {squeue_output}")
-            job_ids = squeue_output.stdout.strip().split()
+            job_ids = squeue_output.strip().split()
             job_ids = [int(job_id) for job_id in job_ids if job_id.isdigit()]
             if job_ids:
                 return max(job_ids)
