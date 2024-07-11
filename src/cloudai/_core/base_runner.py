@@ -157,6 +157,7 @@ class BaseRunner(ABC):
             await self.submit_test(test)
 
         while completed_jobs_count < total_tests:
+            print("Je suis dans le WHILE")
             await self.check_start_post_init_dependencies()
             completed_jobs_count += await self.monitor_jobs()
             await asyncio.sleep(self.monitor_interval)
@@ -212,7 +213,9 @@ class BaseRunner(ABC):
         """
         items = list(self.test_to_job_map.items())
 
+        print("ITEMS - CHECK START POST INIT DEPENDENCIES", items)
         for test, job in items:
+            print("TEST | JOB ", test, job)
             if self.is_job_running(job):
                 await self.check_and_schedule_start_post_init_dependent_tests(test)
 
