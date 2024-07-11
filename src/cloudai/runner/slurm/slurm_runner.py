@@ -64,11 +64,11 @@ class SlurmRunner(BaseRunner):
         job_output_path = self.get_job_output_path(test)
         exec_cmd = test.gen_exec_command(job_output_path)
         logging.info(f"Executing command for test {test.section_name}: {exec_cmd}")
-        job_id = self.get_max_job_id()
+        job_id = 0
 
         if self.mode == "run":
             stdout, stderr = self.cmd_shell.execute(exec_cmd).communicate()
-            job_id = job_id + 1
+            job_id = self.get_max_job_id() + 1
             print(f"JOB ID: {job_id}")
             if job_id is None:
                 raise JobIdRetrievalError(
