@@ -65,7 +65,6 @@ class SlurmRunner(BaseRunner):
         logging.info(f"Running test: {test.section_name}")
         job_output_path = self.get_job_output_path(test)
         exec_cmd = test.gen_exec_command(job_output_path)
-        print(f"EXEC CMD: {exec_cmd}")
         logging.info(f"Executing command for test {test.section_name}: {exec_cmd}")
         job_id = 0
 
@@ -87,7 +86,6 @@ class SlurmRunner(BaseRunner):
     def get_max_job_id(self):
         try:
             squeue_output, _ = self.cmd_shell.execute("squeue --me --noheader --format %A").communicate()
-            print("SQUEUE_OUTPUT", squeue_output)
             job_ids = squeue_output.strip().split()
             job_ids = [int(job_id) for job_id in job_ids if job_id.isdigit()]
             if job_ids:

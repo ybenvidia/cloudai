@@ -148,18 +148,13 @@ class BaseRunner(ABC):
 
         logging.info("Starting test scenario execution.")
         total_tests = len(self.test_scenario.tests)
-        print("TEST SCENARIO TEST _ RUN : " , self.test_scenario.tests)
         completed_jobs_count = 0
 
         dependency_free_tests = self.find_dependency_free_tests()
-        print("TEST DEPENDENCY FREE TESTS _ RUN : ", dependency_free_tests)
         for test in dependency_free_tests:
-            print("ICI DANS LE FOR DEPENDENCY FREE")
             await self.submit_test(test)
 
-        print("APRES LE AWAIT")
         while completed_jobs_count < total_tests:
-            print("Je suis dans le WHILE")
             await self.check_start_post_init_dependencies()
             completed_jobs_count += await self.monitor_jobs()
             await asyncio.sleep(self.monitor_interval)
@@ -215,9 +210,7 @@ class BaseRunner(ABC):
         """
         items = list(self.test_to_job_map.items())
 
-        print("ITEMS - CHECK START POST INIT DEPENDENCIES", items)
         for test, job in items:
-            print("TEST | JOB ", test, job)
             if self.is_job_running(job):
                 await self.check_and_schedule_start_post_init_dependent_tests(test)
 
@@ -228,12 +221,9 @@ class BaseRunner(ABC):
         Args:
             started_test (Test): The test that has just been started.
         """
-        print("TEST_SCENARIO_TESTS: ", self.test_scenario.tests)
         for test in self.test_scenario.tests:
-            print("TEST IN TEST_SCENARIO_TESTS: ", test)
             if test not in self.test_to_job_map:
                 for dep_type, dep in test.dependencies.items():
-                    print("DEP TYPE: ", dep_type)
                     if (dep_type == "start_post_init") and (dep.test == started_test):
                         await self.delayed_submit_test(test, dep.time)
 
