@@ -440,6 +440,10 @@ class SlurmSystem(System):
         while retry_count < retry_threshold:
             logging.debug(f"Executing command to check job status: {command}")
             stdout, stderr = self.cmd_shell.execute(command).communicate()
+            print(f"STDOUT: {stdout}")
+
+            stdout2, stderr2 = self.cmd_shell.execute(f"squeue").communicate()
+            print(f"STDOUT SQUEUE: {stdout2}")
 
             if "Socket timed out" in stderr or "slurm_load_jobs error" in stderr:
                 retry_count += 1
@@ -450,7 +454,7 @@ class SlurmSystem(System):
                 raise RuntimeError(f"Error checking job status: {stderr}")
 
             job_state = stdout.strip()
-            print(f"STDOUT: {stdout}")
+
             print(f"JOB STATE: {job_state}")
             # If the job is listed with a "RUNNING" state, it's considered active
             if job_state == "RUNNING":
