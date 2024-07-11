@@ -433,6 +433,7 @@ class SlurmSystem(System):
                           determined after the specified number of retries.
         """
         retry_count = 0
+        print(f"JOB ID RUNNING: {job_id}")
         command = f"squeue -j {job_id} --noheader --format=%T"
 
         while retry_count < retry_threshold:
