@@ -442,9 +442,6 @@ class SlurmSystem(System):
             stdout, stderr = self.cmd_shell.execute(command).communicate()
             print(f"STDOUT: {stdout}")
 
-            stdout2, stderr2 = self.cmd_shell.execute(f"squeue").communicate()
-            print(f"STDOUT SQUEUE: {stdout2}")
-
             if "Socket timed out" in stderr or "slurm_load_jobs error" in stderr:
                 retry_count += 1
                 logging.warning(f"Transient error encountered. Retrying... " f"({retry_count}/{retry_threshold})")

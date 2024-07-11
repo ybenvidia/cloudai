@@ -221,9 +221,12 @@ class BaseRunner(ABC):
         Args:
             started_test (Test): The test that has just been started.
         """
+        print("TEST_SCENARIO_TESTS: ", self.test_scenario.tests)
         for test in self.test_scenario.tests:
+            print("TEST IN TEST_SCENARIO_TESTS: ", test)
             if test not in self.test_to_job_map:
                 for dep_type, dep in test.dependencies.items():
+                    print("DEP TYPE: ", dep_type)
                     if (dep_type == "start_post_init") and (dep.test == started_test):
                         await self.delayed_submit_test(test, dep.time)
 
