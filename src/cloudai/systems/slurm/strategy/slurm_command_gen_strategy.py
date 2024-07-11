@@ -156,7 +156,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         """
         return ""
 
-    def _write_sbatch_script(self, args: Dict[str, Any], env_vars_str: str, srun_command: str, output_path: str) -> str:
+    def _write_sbatch_script(self, args: Dict[str, Any], env_vars_str: str, srun_command: str, output_path: str):
         """
         Write the batch script for Slurm submission and returns the sbatch command.
 
@@ -213,4 +213,4 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
 
         #return f"bash {batch_script_path} &"
 
-        return f"{batch_script_path}"
+        return ["bash", batch_script_path]

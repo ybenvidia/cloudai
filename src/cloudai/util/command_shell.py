@@ -52,14 +52,13 @@ class CommandShell:
         Raises:
             subprocess.CalledProcessError: If command execution fails.
         """
-        # process = subprocess.Popen(
-        #     command,
-        #     shell=True,
-        #     executable=self.executable,
-        #     stdout=subprocess.PIPE,
-        #     stderr=subprocess.PIPE,
-        #     text=True,
-        # )
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            executable=self.executable,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
-        process = subprocess.Popen(["bash", command])
         return process
