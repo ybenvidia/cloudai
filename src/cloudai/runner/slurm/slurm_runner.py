@@ -71,22 +71,23 @@ class SlurmRunner(BaseRunner):
             job_id = job_id + 1
             print(f"JOB ID: {job_id}")
             if job_id is None:
-                if job_id is None:
-                    raise JobIdRetrievalError(
-                        test_name=str(test.section_name),
-                        command=exec_cmd,
-                        stdout=stdout,
-                        stderr=stderr,
-                        message="Failed to retrieve job ID from command output.",
-                    )
+                raise JobIdRetrievalError(
+                    test_name=str(test.section_name),
+                    command=exec_cmd,
+                    stdout=stdout,
+                    stderr=stderr,
+                    message="Failed to retrieve job ID from command output.",
+                )
         return SlurmJob(job_id, test, job_output_path)
 
     def get_max_job_id(self):
         try:
             squeue_output, _ = self.cmd_shell.execute("sacct -X --start now-1days -o jobid | tail -n 1").communicate()
             print(f"OUTPUT {squeue_output}")
-            job_id = squeue_output.strip().split()
-            return int(job_id) if job_id.isdigit() else None
+            job_ids = squeue_output.stdout.strip().split()
+            job_ids = [int(job_id) for job_id in job_ids if job_id.isdigit()]
+            if job_ids:
+                return max(job_ids)
 
         except ValueError as e:
             print(f"Error processing job IDs: {e}")
