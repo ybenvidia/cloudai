@@ -84,6 +84,7 @@ class SlurmRunner(BaseRunner):
     def get_max_job_id(self):
         try:
             squeue_output, _ = self.cmd_shell.execute("squeue --me --noheader --format %A").communicate()
+            print(f"OUTPUT {squeue_output}")
             job_ids = squeue_output.strip().split()
             job_ids = [int(job_id) for job_id in job_ids if job_id.isdigit()]
             if job_ids:
