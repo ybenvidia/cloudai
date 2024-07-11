@@ -436,6 +436,7 @@ class SlurmSystem(System):
         print(f"JOB ID RUNNING: {job_id}")
         command = f"squeue -j {job_id} --noheader --format=%T"
 
+        print(f"RETRY COUNT: {retry_count}")
         while retry_count < retry_threshold:
             logging.debug(f"Executing command to check job status: {command}")
             stdout, stderr = self.cmd_shell.execute(command).communicate()
