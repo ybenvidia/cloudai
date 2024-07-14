@@ -448,7 +448,6 @@ class SlurmSystem(System):
                 raise RuntimeError(f"Error checking job status: {stderr}")
 
             job_state = stdout.strip()
-
             # If the job is listed with a "RUNNING" state, it's considered active
             if job_state == "RUNNING":
                 return True

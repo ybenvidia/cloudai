@@ -60,5 +60,4 @@ class CommandShell:
             stderr=subprocess.PIPE,
             text=True,
         )
-
         return process

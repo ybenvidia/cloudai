@@ -167,7 +167,6 @@ class BaseRunner(ABC):
             test (Test): The test to be started.
         """
         logging.info(f"Starting test: {test.section_name}")
-
         try:
             job = self._submit_test(test)
             self.jobs.append(job)
