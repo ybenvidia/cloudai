@@ -95,10 +95,10 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
 
         srun_command_parts.append(f"--job-name={slurm_args['job_name']}")
 
-        if slurm_args["node_list_str"]:
+        if "node_list_str" in slurm_args:
             srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
 
-        if slurm_args["time_limit"]:
+        if "time_limit" in slurm_args:
             srun_command_parts.append(f"--time={slurm_args['time_limit']}")
 
         if "output" not in slurm_args:
