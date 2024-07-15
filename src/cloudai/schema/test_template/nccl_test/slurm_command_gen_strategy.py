@@ -98,6 +98,9 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         if slurm_args["node_list_str"]:
             srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
 
+        if slurm_args["time_limit"]:
+            srun_command_parts.append(f"--time={slurm_args['time_limit']}")
+
         if "output" not in slurm_args:
             srun_command_parts.append(f"--output={os.path.join(output_path, 'stdout.txt')}")
         if "error" not in slurm_args:
