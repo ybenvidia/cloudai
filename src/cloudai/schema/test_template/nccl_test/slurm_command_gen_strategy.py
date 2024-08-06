@@ -45,7 +45,8 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             raise KeyError("Subtest name not specified or unsupported.")
 
         slurm_args = self._parse_slurm_args(subtest_name, final_env_vars, final_cmd_args, num_nodes, nodes)
-        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args, output_path)
+        # srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args, output_path)
+        srun_command = self._generate_srun_command(slurm_args, final_env_vars, final_cmd_args, extra_cmd_args)
         return self._write_sbatch_script(slurm_args, env_vars_str, srun_command, output_path)
 
     def _parse_slurm_args(
@@ -81,30 +82,30 @@ class NcclTestSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         slurm_args: Dict[str, Any],
         env_vars: Dict[str, str],
         cmd_args: Dict[str, str],
-        extra_cmd_args: str,
-        output_path: str
+        extra_cmd_args: str
+        # output_path: str
     ) -> str:
-        ntasks_per_node = cmd_args.get("ntasks_per_node")
-        if ntasks_per_node is None:
-            raise KeyError("ntasks_per_node not specified in command-line arguments.")
+        # ntasks_per_node = cmd_args.get("ntasks_per_node")
+        # if ntasks_per_node is None:
+        #     raise KeyError("ntasks_per_node not specified in command-line arguments.")
 
         srun_command_parts = [
             f"srun --ntasks-per-node={cmd_args['ntasks_per_node']} ",
             "--mpi=pmix",
         ]
 
-        srun_command_parts.append(f"--job-name={slurm_args['job_name']}")
+        # srun_command_parts.append(f"--job-name={slurm_args['job_name']}")
 
-        if "node_list_str" in slurm_args:
-            srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
+        # if "node_list_str" in slurm_args:
+        #     srun_command_parts.append(f"--nodelist={slurm_args['node_list_str']}")
 
-        if "time_limit" in slurm_args:
-            srun_command_parts.append(f"--time={slurm_args['time_limit']}")
+        # if "time_limit" in slurm_args:
+        #     srun_command_parts.append(f"--time={slurm_args['time_limit']}")
 
-        if "output" not in slurm_args:
-            srun_command_parts.append(f"--output={os.path.join(output_path, 'stdout.txt')}")
-        if "error" not in slurm_args:
-            srun_command_parts.append(f"--error={os.path.join(output_path, 'stderr.txt')}")
+        # if "output" not in slurm_args:
+        #     srun_command_parts.append(f"--output={os.path.join(output_path, 'stdout.txt')}")
+        # if "error" not in slurm_args:
+        #     srun_command_parts.append(f"--error={os.path.join(output_path, 'stderr.txt')}")
 
         srun_command_parts.append(f"--container-image={slurm_args['image_path']}")
 

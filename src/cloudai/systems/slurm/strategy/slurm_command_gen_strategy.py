@@ -174,7 +174,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             "#!/bin/bash",
         ]
 
-        if args['partition'] != 'defq':
+        if args['partition'] == 'defq':
             batch_script_content.append(f"#SBATCH --job-name={args['job_name']}")
             batch_script_content.append(f"#SBATCH -N {args['num_nodes']}")
 
@@ -207,7 +207,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
         with open(batch_script_path, "w") as batch_file:
             batch_file.write("\n".join(batch_script_content))
 
-        if args['partition'] != 'defq':
+        if args['partition'] == 'defq':
             return f"sbatch {batch_script_path}"
 
         os.chmod(batch_script_path, 0o775)
