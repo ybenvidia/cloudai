@@ -16,7 +16,7 @@
 import getpass
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Union, Optional, Tuple
 
 from cloudai import System
 from cloudai.util import CommandShell
@@ -327,7 +327,7 @@ class SlurmSystem(System):
         return [node.name for node in self.get_group_nodes(partition_name, group_name)]
 
     def get_available_nodes_from_group(
-        self, partition_name: str, group_name: str, number_of_nodes: int
+        self, partition_name: str, group_name: str, number_of_nodes: Union[int, str]
     ) -> List[SlurmNode]:
         """
         Retrieve a specific number of potentially available nodes from a group within a partition.
@@ -372,20 +372,32 @@ class SlurmSystem(System):
 
         # Allocate nodes based on priority: idle, then completing, then allocated
         allocated_nodes = []
-        for state in [
+        available_states = [
             SlurmNodeState.IDLE,
             SlurmNodeState.COMPLETING,
-            SlurmNodeState.ALLOCATED,
-        ]:
-            while grouped_nodes[state] and len(allocated_nodes) < number_of_nodes:
-                allocated_nodes.append(grouped_nodes[state].pop(0))
-
-        if len(allocated_nodes) < number_of_nodes:
-            raise ValueError(
-                "Requested number of nodes ({}) exceeds the number of " "available nodes in group '{}'.".format(
-                    number_of_nodes, group_name
+            SlurmNodeState.ALLOCATED, 
+        ]
+        
+        if number_of_nodes == 'all':
+            for state in available_states: 
+               allocated_nodes.extend(grouped_nodes[state])
+               
+            if len(allocated_nodes) == 0:
+                raise ValueError(
+                    "Requested all the nodes exceeds the number of " "available nodes in group '{}'.".format(group_name)
                 )
-            )
+               
+        else:
+            for state in available_states:
+                while grouped_nodes[state] and len(allocated_nodes) < number_of_nodes:
+                    allocated_nodes.append(grouped_nodes[state].pop(0))
+
+            if len(allocated_nodes) < number_of_nodes:
+                raise ValueError(
+                    "Requested number of nodes ({}) exceeds the number of " "available nodes in group '{}'.".format(
+                        number_of_nodes, group_name
+                    )
+                )
 
         # Log allocation details
         logging.info(
@@ -697,7 +709,10 @@ class SlurmSystem(System):
                 if len(parts) != 3:
                     raise ValueError("Format should be partition:group:num_nodes")
                 partition_name, group_name, num_nodes_str = parts
-                num_nodes = int(num_nodes_str)
+                if num_nodes_str != 'all':
+                    num_nodes = int(num_nodes_str)
+                else:
+                    num_nodes = num_nodes_str
                 group_nodes = self.get_available_nodes_from_group(partition_name, group_name, num_nodes)
                 parsed_nodes += [node.name for node in group_nodes]
             else:
