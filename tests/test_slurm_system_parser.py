@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,7 +44,18 @@ def example_data() -> Dict[str, Any]:
     }
 
 
-def test_parse_slurm_system_parser(example_data):
+@pytest.mark.parametrize(
+    "mpi_value, expected_mpi",
+    [
+        ("pmix", "pmix"),
+        ("pmi2", "pmi2"),
+        ("", "pmix"),
+    ],
+)
+def test_parse_slurm_system_parser_with_mpi(example_data, mpi_value, expected_mpi):
+    if mpi_value:
+        example_data["mpi"] = mpi_value
+
     parser = SlurmSystemParser()
     slurm_system = parser.parse(example_data)
 
@@ -57,6 +69,7 @@ def test_parse_slurm_system_parser(example_data):
     assert "backup" in slurm_system.partitions
     assert "group1" in slurm_system.groups["main"]
     assert "group2" in slurm_system.groups["backup"]
+    assert slurm_system.mpi == expected_mpi
 
 
 @pytest.mark.parametrize(

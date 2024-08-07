@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -70,6 +71,7 @@ class TestScenarioParser:
         if "name" not in data:
             raise KeyError("The 'name' field is missing from the data.")
         test_scenario_name = data["name"]
+        job_status_check = data.get("job_status_check", True)
         raw_tests_data = data.get("Tests", {})
         tests_data = {f"Tests.{k}": v for k, v in raw_tests_data.items()}
 
@@ -100,7 +102,9 @@ class TestScenarioParser:
             if "time_limit" in test_info:
                 test.time_limit = test_info["time_limit"]
 
-        return TestScenario(name=test_scenario_name, tests=list(section_tests.values()))
+        return TestScenario(
+            name=test_scenario_name, tests=list(section_tests.values()), job_status_check=job_status_check
+        )
 
     def _create_section_test(self, section: str, test_info: Dict[str, Any]) -> Test:
         """
@@ -118,7 +122,12 @@ class TestScenarioParser:
         """
         test_name = test_info.get("name", "")
         if test_name not in self.test_mapping:
-            raise ValueError(f"Test '{test_name}' not found in test mapping.")
+            raise ValueError(
+                f"Test '{test_name}' not found in the test schema directory. Please ensure that all tests referenced "
+                f"in the test scenario schema exist in the test schema directory. To resolve this issue, you can "
+                f"either add the corresponding test schema file for '{test_name}' in the directory or remove the test "
+                f"reference from the test scenario schema."
+            )
 
         test = copy.deepcopy(self.test_mapping[test_name])
         test.test_template = self.test_mapping[test_name].test_template

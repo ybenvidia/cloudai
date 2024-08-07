@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,6 +82,7 @@ class SlurmSystemParser(BaseSystemParser):
         account = data.get("account")
         distribution = data.get("distribution")
 
+        mpi = data.get("mpi", "pmix")
         gpus_per_node = safe_int(data.get("gpus_per_node"))
         ntasks_per_node = safe_int(data.get("ntasks_per_node"))
 
@@ -150,9 +152,11 @@ class SlurmSystemParser(BaseSystemParser):
             partitions=updated_partitions,
             account=account,
             distribution=distribution,
+            mpi=mpi,
             gpus_per_node=gpus_per_node,
             ntasks_per_node=ntasks_per_node,
             cache_docker_images_locally=cache_docker_images_locally,
             groups=updated_groups,
             global_env_vars=global_env_vars,
+            extra_srun_args=data.get("extra_srun_args"),
         )

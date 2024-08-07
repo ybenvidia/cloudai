@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,16 +23,18 @@ name = "NcclTest"
 
   [cmd_args.subtest_name]
   type = "preset"
-  values = ["all_reduce_perf_mpi",
-            "all_gather_perf_mpi",
-            "alltoall_perf_mpi",
-            "broadcast_perf_mpi",
-            "gather_perf_mpi",
-            "hypercube_perf_mpi",
-            "reduce_perf_mpi",
-            "reduce_scatter_perf_mpi",
-            "scatter_perf_mpi",
-            "sendrecv_perf_mpi"]
+  values = [
+    "all_reduce_perf_mpi",
+    "all_gather_perf_mpi",
+    "alltoall_perf_mpi",
+    "broadcast_perf_mpi",
+    "gather_perf_mpi",
+    "hypercube_perf_mpi",
+    "reduce_perf_mpi",
+    "reduce_scatter_perf_mpi",
+    "scatter_perf_mpi",
+    "sendrecv_perf_mpi",
+  ]
   default = "all_reduce_perf_mpi"
 
   [cmd_args.nthreads]

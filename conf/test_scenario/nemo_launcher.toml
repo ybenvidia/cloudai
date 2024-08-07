@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,17 +17,17 @@
 name = "nemo_launcher"
 
 [Tests.1]
-  name = "nemo_launcher"
-  num_nodes = "4"
+name = "gpt"
+num_nodes = "4"
 
 [Tests.2]
-  name = "nemo_launcher"
-  num_nodes = "4"
+name = "gpt"
+num_nodes = "4"
   [Tests.2.dependencies]
-    start_post_comp = { name = "Tests.1", time = 0 }
+  start_post_comp = { name = "Tests.1", time = 0 }
 
 [Tests.3]
-  name = "nemo_launcher"
-  num_nodes = "4"
+name = "gpt"
+num_nodes = "4"
   [Tests.3.dependencies]
-     start_post_comp = { name = "Tests.2", time = 0 }
+  start_post_comp = { name = "Tests.2", time = 0 }

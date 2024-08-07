@@ -1,5 +1,6 @@
-#
+# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
 # Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -159,16 +160,9 @@ class DockerImageCacheManager:
             f"cache_docker_images_locally={self.cache_docker_images_locally}"
         )
 
-        # If not caching locally, check URL accessibility
+        # If not caching locally, return True. Defer checking URL accessibility to srun.
         if not self.cache_docker_images_locally:
-            accessibility_check = self._check_docker_image_accessibility(docker_image_url)
-            if accessibility_check.success:
-                return DockerImageCacheResult(True, docker_image_url, accessibility_check.message)
-            logging.error(
-                f"Accessibility check failed for Docker image URL: {docker_image_url}. "
-                f"Error: {accessibility_check.message}"
-            )
-            return DockerImageCacheResult(False, "", accessibility_check.message)
+            return DockerImageCacheResult(True, docker_image_url, "")
 
         # Check if docker_image_url is a file path and exists
         if os.path.isfile(docker_image_url) and os.path.exists(docker_image_url):
@@ -250,7 +244,18 @@ class DockerImageCacheManager:
         logging.debug(f"Importing Docker image: {enroot_import_cmd}")
 
         try:
-            p = subprocess.run(enroot_import_cmd, shell=True, check=True, capture_output=True)
+            p = subprocess.run(enroot_import_cmd, shell=True, check=True, capture_output=True, text=True)
+
+            if "Disk quota exceeded" in p.stderr or "Write error" in p.stderr:
+                error_message = (
+                    f"Failed to cache Docker image {docker_image_url}. Command: {enroot_import_cmd}. "
+                    f"Error: '{p.stderr}'\n\n"
+                    "This error indicates a disk-related issue. Please check if the disk is full or not usable. "
+                    "If the disk is full, consider using a different disk or removing unnecessary files."
+                )
+                logging.error(error_message)
+                return DockerImageCacheResult(False, "", error_message)
+
             success_message = f"Docker image cached successfully at {docker_image_path}."
             logging.debug(success_message)
             logging.debug(f"Command used: {enroot_import_cmd}, stdout: {p.stdout}, stderr: {p.stderr}")
