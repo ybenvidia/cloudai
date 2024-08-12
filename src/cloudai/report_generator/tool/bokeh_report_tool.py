@@ -48,6 +48,7 @@ class BokehReportTool:
         height: int = 308,
         x_axis_type: str = "linear",
         tools: str = "pan,wheel_zoom,box_zoom,reset,save",
+        x_range: Optional[Range1d] = None
     ) -> figure:
         """
         Create a configured Bokeh figure with common settings.
@@ -76,6 +77,10 @@ class BokehReportTool:
             y_range=y_range,
             align="center",
         )
+        
+        if x_range is not None:
+            plot.x_range = x_range
+        
         return plot
 
     def add_sol_line(
