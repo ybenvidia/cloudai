@@ -206,7 +206,7 @@ class BokehReportTool:
             df['iteration'] = range(1, len(df) + 1)
             x_column = 'iteration'
             x_axis_label = "Iteration"
-            x_axis_type = "linear"
+            x_axis_type = "log"
             x_range = Range1d(start=1, end=len(df))
         else:
             x_axis_type = "log"
@@ -271,7 +271,7 @@ class BokehReportTool:
             df['iteration'] = range(1, len(df) + 1)
             x_column = 'iteration'
             x_axis_label = "Iteration"
-            x_axis_type = "linear"
+            x_axis_type = "log"
             x_range = Range1d(start=1, end=len(df))
         else:
             x_axis_type = "log"
