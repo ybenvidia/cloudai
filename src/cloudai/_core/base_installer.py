@@ -93,7 +93,7 @@ class BaseInstaller:
             return InstallStatusResult(False, "Some test templates are not installed.", not_installed)
         else:
             return InstallStatusResult(True, "All test templates are installed.")
-    
+
     def install(self, test_templates: Iterable[TestTemplate]) -> InstallStatusResult:
         """
         Install the necessary components if they are not already installed.
