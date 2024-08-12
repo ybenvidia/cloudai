@@ -89,7 +89,10 @@ class BaseInstaller:
             if not result.success:
                 not_installed[test_template.name] = result.message
 
-        return InstallStatusResult(True, "All test templates are installed.")
+        if not_installed:
+            return InstallStatusResult(False, "Some test templates are not installed.", not_installed)
+        else:
+            return InstallStatusResult(True, "All test templates are installed.")
     
     def install(self, test_templates: Iterable[TestTemplate]) -> InstallStatusResult:
         """
