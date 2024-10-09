@@ -388,7 +388,7 @@ class SlurmSystem(System):
             SlurmNodeState.ALLOCATED, 
         ]
         
-        if number_of_nodes == 'all':
+        if number_of_nodes == 'max_avail':
             for state in available_states: 
                allocated_nodes.extend(grouped_nodes[state])
                
@@ -725,7 +725,7 @@ class SlurmSystem(System):
                 if len(parts) != 3:
                     raise ValueError("Format should be partition:group:num_nodes")
                 partition_name, group_name, num_nodes_str = parts
-                if num_nodes_str != 'all':
+                if num_nodes_str != 'max_avail':
                     num_nodes = int(num_nodes_str)
                 else:
                     num_nodes = num_nodes_str
