@@ -1,21 +1,5 @@
-# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-import os
 from math import pi
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pandas as pd
@@ -31,10 +15,10 @@ class BokehReportTool:
     Tool for creating interactive Bokeh plots.
 
     Attributes
-        output_directory (str): Directory to save the generated reports.
+        output_directory (Path): Directory to save the generated reports.
     """
 
-    def __init__(self, output_directory: str):
+    def __init__(self, output_directory: Path):
         self.output_directory = output_directory
         self.plots = []
 
@@ -48,7 +32,7 @@ class BokehReportTool:
         height: int = 308,
         x_axis_type: str = "linear",
         tools: str = "pan,wheel_zoom,box_zoom,reset,save",
-        x_range: Optional[Range1d] = None
+        x_range: Optional[Range1d] = None,
     ) -> figure:
         """
         Create a configured Bokeh figure with common settings.
@@ -62,6 +46,7 @@ class BokehReportTool:
             height (int): Height of the plot.
             x_axis_type (str): Type of the x-axis ('linear' or 'log').
             tools (str): Tools to include in the plot.
+            x_range (Range1d): Range for the x-axis, optional.
 
         Returns:
             figure: A Bokeh figure configured with the specified parameters.
@@ -156,97 +141,50 @@ class BokehReportTool:
             sol (Optional[float], optional): Value to plot as the SOL reference line.
             color (str, optional): Color of the line in the plot. Default is 'black'.
         """
+        # Handle the case where there's only a single data point
         if len(df) == 1:
             y_range = Range1d(start=0, end=(df[y_column].iloc[0] * 1.1))
+            x_range = Range1d(start=0, end=(df[x_column].iloc[0] * 1.1))
         else:
             y_range = Range1d(start=0, end=(max(df[y_column]) * 1.1))
+            x_range = None
 
         p = self.create_figure(
             title="CloudAI " + title,
             x_axis_label=x_axis_label,
             y_axis_label=y_column,
             y_range=y_range,
+            x_range=x_range,
         )
 
         if len(df) == 1:
             # Use scatter for single data point
-            p.scatter(x=x_column, y=y_column, source=ColumnDataSource(df), size=10, color=color, legend_label=y_column)
+            p.scatter(x=x_column, y=y_column, source=ColumnDataSource(df), size=15, color=color, legend_label=y_column)
         else:
             # Use line for multiple data points
             p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
 
-
         self.add_sol_line(p, df, x_column, y_column, sol)
 
         self.plots.append(p)
 
-    def add_log_x_linear_y_single_line_plot(
-        self,
-        title: str,
-        x_column: str,
-        y_column: str,
-        x_axis_label: str,
-        y_axis_label: str,
-        df: pd.DataFrame,
-        sol: Optional[float] = None,
-        color: str = "black",
-    ):
+    def handle_multiple_iterations(self, df: pd.DataFrame, x_column: str, iterations_column: str):
         """
-        Create a single line plot with a logarithmic x-axis and linear y-axis.
+        Handle the case of multiple iterations and different message sizes.
 
         Args:
-            title (str): Title of the plot.
-            x_column (str): The column used for the x-axis values.
-            y_column (str): The column used for the y-axis values.
-            x_axis_label (str): Label for the x-axis.
-            y_axis_label (str): Label for the y-axis.
             df (pd.DataFrame): DataFrame containing the data.
-            sol (Optional[float]): Speed-of-light performance reference line.
-            color (str): Color of the line in the plot.
-
-        This function sets up a Bokeh figure and plots a single line of data. It also
-        optionally adds a reference line (SOL) if provided. The x-axis uses a logarithmic
-        scale, and custom JavaScript is used for tick formatting to enhance readability.
+            x_column (str): The column name for the x-axis values.
+            iterations_column (str): The column representing the iteration values.
         """
-        x_min, x_max = self.find_min_max(df, x_column)
-        y_min, y_max = self.find_min_max(df, y_column, sol)
+        df_min = df.groupby(iterations_column)[x_column].min().reset_index()
+        df_max = df.groupby(iterations_column)[x_column].max().reset_index()
+        df_avg = df.groupby(iterations_column)[x_column].mean().reset_index()
 
-        # Check if x_min equals x_max
-        if x_min == x_max:
-            # Use iteration number as x-axis
-            df['iteration'] = range(1, len(df) + 1)
-            x_column = 'iteration'
-            x_axis_label = "Iteration"
-            x_axis_type = "linear"
-            x_range = Range1d(start=1, end=len(df))
-        else:
-            x_axis_type = "log"
-            x_range = None
-
-        # Create a Bokeh figure with logarithmic x-axis
-        p = self.create_figure(
-            title="CloudAI " + title,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type=x_axis_type,
-            y_range=Range1d(start=0, end=y_max * 1.1),
-            x_range=x_range
-        )
-
-        # Add main line plot
-        p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
-
-        self.add_sol_line(p, df, x_column, y_column, sol)
-
-        p.legend.location = "bottom_right"
-
-        if x_axis_type == "log":
-            p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-            p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-            p.xaxis.major_label_orientation = pi / 4
-
-        # Append plot to internal list for future rendering
-        self.plots.append(p)
+        # Add min, max, and average line plots
+        self.add_linear_xy_line_plot("Min Message Size per Iteration", iterations_column, x_column, "Iterations", df_min)
+        self.add_linear_xy_line_plot("Max Message Size per Iteration", iterations_column, x_column, "Iterations", df_max)
+        self.add_linear_xy_line_plot("Average Message Size per Iteration", iterations_column, x_column, "Iterations", df_avg)
 
     def add_log_x_linear_y_multi_line_plot(
         self,
@@ -276,17 +214,17 @@ class BokehReportTool:
             _, col_max = self.find_min_max(df, y_column, sol)
             y_max = max(y_max, col_max)
 
-        # Check if x_min equals x_max
+        x_axis_type = "log"
+        x_range = None
+
+        # Check if x_min equals x_max - constant message size
         if x_min == x_max:
             # Use iteration number as x-axis
-            df['iteration'] = range(1, len(df) + 1)
-            x_column = 'iteration'
+            df["iteration"] = range(1, len(df) + 1)
+            x_column = "iteration"
             x_axis_label = "Iteration"
             x_axis_type = "linear"
             x_range = Range1d(start=1, end=len(df))
-        else:
-            x_axis_type = "log"
-            x_range = None
 
         p = self.create_figure(
             title="CloudAI " + title,
@@ -294,15 +232,20 @@ class BokehReportTool:
             y_axis_label=y_axis_label,
             x_axis_type=x_axis_type,
             y_range=Range1d(start=0, end=y_max * 1.1),
-            x_range=x_range
+            x_range=x_range,
         )
 
         # Adding lines for each data type specified
-        for y_column, color in y_columns:
-            p.line(
-                x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
-            )
-            y_max = max(y_max, df[y_column].max())
+        if len(df) == 1:
+            # Use scatter for single data point
+            for y_column, color in y_columns:
+                p.scatter(x=x_column, y=y_column, source=ColumnDataSource(df), size=15, color=color, legend_label=y_column)
+        else:
+            for y_column, color in y_columns:
+                p.line(
+                    x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
+                )
+                y_max = max(y_max, df[y_column].max())
 
         self.add_sol_line(p, df, x_column, "SOL", sol)
 
@@ -316,14 +259,15 @@ class BokehReportTool:
 
         self.plots.append(p)
 
-    def finalize_report(self, output_filename: str):
+    def finalize_report(self, output_filename: Path):
         """
         Save all accumulated plots to a single HTML file.
 
         Args:
-            output_filename (str): output_filename to save the final report.
+            output_filename (Path): Path to save the final report.
         """
-        output_filepath = os.path.join(self.output_directory, output_filename)
+        output_filepath = self.output_directory / output_filename
         output_file(output_filepath)
         save(column(*self.plots))
         self.plots = []  # Clear the list after saving to prepare for future use.
+
