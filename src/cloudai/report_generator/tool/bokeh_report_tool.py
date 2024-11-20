@@ -77,10 +77,10 @@ class BokehReportTool:
             y_range=y_range,
             align="center",
         )
-        
+
         if x_range is not None:
             plot.x_range = x_range
-        
+
         return plot
 
     def add_sol_line(
@@ -156,14 +156,25 @@ class BokehReportTool:
             sol (Optional[float], optional): Value to plot as the SOL reference line.
             color (str, optional): Color of the line in the plot. Default is 'black'.
         """
+        if len(df) == 1:
+            y_range = Range1d(start=0, end=(df[y_column].iloc[0] * 1.1))
+        else:
+            y_range = Range1d(start=0, end=(max(df[y_column]) * 1.1))
+
         p = self.create_figure(
             title="CloudAI " + title,
             x_axis_label=x_axis_label,
             y_axis_label=y_column,
-            y_range=Range1d(start=0, end=(max(df[y_column]) * 1.1)),
+            y_range=y_range,
         )
 
-        p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+        if len(df) == 1:
+            # Use scatter for single data point
+            p.scatter(x=x_column, y=y_column, source=ColumnDataSource(df), size=10, color=color, legend_label=y_column)
+        else:
+            # Use line for multiple data points
+            p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+
 
         self.add_sol_line(p, df, x_column, y_column, sol)
 
@@ -199,7 +210,7 @@ class BokehReportTool:
         """
         x_min, x_max = self.find_min_max(df, x_column)
         y_min, y_max = self.find_min_max(df, y_column, sol)
-        
+
         # Check if x_min equals x_max
         if x_min == x_max:
             # Use iteration number as x-axis
@@ -276,7 +287,7 @@ class BokehReportTool:
         else:
             x_axis_type = "log"
             x_range = None
-        
+
         p = self.create_figure(
             title="CloudAI " + title,
             x_axis_label=x_axis_label,
