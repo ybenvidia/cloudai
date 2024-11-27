@@ -187,28 +187,50 @@ class BokehReportTool:
         optionally adds a reference line (SOL) if provided. The x-axis uses a logarithmic
         scale, and custom JavaScript is used for tick formatting to enhance readability.
         """
+        title_string = (
+            f"x_column: {x_column}, "
+            f"y_column: {y_column}, "
+            f"df: {df}, "
+            f"sol: {sol}, "
+            f"title: {title}, "
+            f"x_axis_label: {x_axis_label}, "
+            f"y_axis_label: {y_axis_label}, "
+            f"color: {color}"
+        )
+
         x_min, x_max = self.find_min_max(df, x_column)
         y_min, y_max = self.find_min_max(df, y_column, sol)
-        
-        # Check if x_min equals x_max
-        if x_min == x_max:
-            # Use iteration number as x-axis
-            df['iteration'] = range(1, len(df) + 1)
-            x_column = 'iteration'
-            x_axis_label = "Iteration"
+
+        if len(df) == 1:
+            x_padding = (x_max - x_min) * 0.1 if x_max > x_min else 1
+            y_padding = (y_max - y_min) * 0.1 if y_max > y_min else 1
+
+            x_range = Range1d(start=x_min - x_padding, end=x_max + x_padding)
+            y_range = Range1d(start=y_min - y_padding, end=y_max + y_padding)
             x_axis_type = "linear"
-            x_range = Range1d(start=1, end=len(df))
+
         else:
-            x_axis_type = "log"
-            x_range = None
+            # Check if x_min equals x_max
+            if x_min == x_max:
+                # Use iteration number as x-axis
+                df['iteration'] = range(1, len(df) + 1)
+                x_column = 'iteration'
+                x_axis_label = "Iteration"
+                x_axis_type = "linear"
+                x_range = Range1d(start=1, end=len(df))
+            else:
+                x_axis_type = "log"
+                x_range = None
+            
+            y_range=Range1d(start=0, end=y_max * 1.1)
 
         # Create a Bokeh figure with logarithmic x-axis
         p = self.create_figure(
-            title="CloudAI " + title,
+            title=title_string,
             x_axis_label=x_axis_label,
             y_axis_label=y_axis_label,
             x_axis_type=x_axis_type,
-            y_range=Range1d(start=0, end=y_max * 1.1),
+            y_range=y_range,
             x_range=x_range
         )
 
@@ -224,6 +246,8 @@ class BokehReportTool:
             p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
             p.xaxis.major_label_orientation = pi / 4
 
+        p.title.text = title_string
+        
         # Append plot to internal list for future rendering
         self.plots.append(p)
 
