@@ -161,93 +161,174 @@ class BokehReportTool:
 
         self.plots.append(p)
 
+    # def add_log_x_linear_y_single_line_plot(
+    #     self,
+    #     title: str,
+    #     x_column: str,
+    #     y_column: str,
+    #     x_axis_label: str,
+    #     y_axis_label: str,
+    #     df: pd.DataFrame,
+    #     sol: Optional[float] = None,
+    #     color: str = "black",
+    # ):
+    #     """
+    #     Create a single line plot with a logarithmic x-axis and linear y-axis.
+    #     Args:
+    #         title (str): Title of the plot.
+    #         x_column (str): The column used for the x-axis values.
+    #         y_column (str): The column used for the y-axis values.
+    #         x_axis_label (str): Label for the x-axis.
+    #         y_axis_label (str): Label for the y-axis.
+    #         df (pd.DataFrame): DataFrame containing the data.
+    #         sol (Optional[float]): Speed-of-light performance reference line.
+    #         color (str): Color of the line in the plot.
+    #     This function sets up a Bokeh figure and plots a single line of data. It also
+    #     optionally adds a reference line (SOL) if provided. The x-axis uses a logarithmic
+    #     scale, and custom JavaScript is used for tick formatting to enhance readability.
+    #     """
+    #     title_string = (
+    #         f"x_column: {x_column}, "
+    #         f"y_column: {y_column}, "
+    #         f"df: {df}, "
+    #         f"sol: {sol}, "
+    #         f"title: {title}, "
+    #         f"x_axis_label: {x_axis_label}, "
+    #         f"y_axis_label: {y_axis_label}, "
+    #         f"color: {color}"
+    #     )
+
+    #     x_min, x_max = self.find_min_max(df, x_column)
+    #     y_min, y_max = self.find_min_max(df, y_column, sol)
+
+    #     if len(df) == 1:
+    #         x_padding = (x_max - x_min) * 0.1 if x_max > x_min else 1
+    #         y_padding = (y_max - y_min) * 0.1 if y_max > y_min else 1
+
+    #         x_range = Range1d(start=x_min - x_padding, end=x_max + x_padding)
+    #         y_range = Range1d(start=y_min - y_padding, end=y_max + y_padding)
+    #         x_axis_type = "linear"
+
+    #     else:
+    #         # Check if x_min equals x_max
+    #         if x_min == x_max:
+    #             # Use iteration number as x-axis
+    #             df['iteration'] = range(1, len(df) + 1)
+    #             x_column = 'iteration'
+    #             x_axis_label = "Iteration"
+    #             x_axis_type = "linear"
+    #             x_range = Range1d(start=1, end=len(df))
+    #         else:
+    #             x_axis_type = "log"
+    #             x_range = None
+            
+    #         y_range=Range1d(start=0, end=y_max * 1.1)
+
+    #     # Create a Bokeh figure with logarithmic x-axis
+    #     p = self.create_figure(
+    #         title=title_string,
+    #         x_axis_label=x_axis_label,
+    #         y_axis_label=y_axis_label,
+    #         x_axis_type=x_axis_type,
+    #         y_range=y_range,
+    #         x_range=x_range
+    #     )
+
+    #     # Add main line plot
+    #     p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+
+    #     self.add_sol_line(p, df, x_column, y_column, sol)
+
+    #     p.legend.location = "bottom_right"
+
+    #     if x_axis_type == "log":
+    #         p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
+    #         p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
+    #         p.xaxis.major_label_orientation = pi / 4
+
+    #     p.title.text = title_string
+        
+    #     # Append plot to internal list for future rendering
+    #     self.plots.append(p)
+
     def add_log_x_linear_y_single_line_plot(
-        self,
-        title: str,
-        x_column: str,
-        y_column: str,
-        x_axis_label: str,
-        y_axis_label: str,
-        df: pd.DataFrame,
-        sol: Optional[float] = None,
-        color: str = "black",
-    ):
-        """
-        Create a single line plot with a logarithmic x-axis and linear y-axis.
-        Args:
-            title (str): Title of the plot.
-            x_column (str): The column used for the x-axis values.
-            y_column (str): The column used for the y-axis values.
-            x_axis_label (str): Label for the x-axis.
-            y_axis_label (str): Label for the y-axis.
-            df (pd.DataFrame): DataFrame containing the data.
-            sol (Optional[float]): Speed-of-light performance reference line.
-            color (str): Color of the line in the plot.
-        This function sets up a Bokeh figure and plots a single line of data. It also
-        optionally adds a reference line (SOL) if provided. The x-axis uses a logarithmic
-        scale, and custom JavaScript is used for tick formatting to enhance readability.
-        """
-        title_string = (
-            f"x_column: {x_column}, "
-            f"y_column: {y_column}, "
-            f"df: {df}, "
-            f"sol: {sol}, "
-            f"title: {title}, "
-            f"x_axis_label: {x_axis_label}, "
-            f"y_axis_label: {y_axis_label}, "
-            f"color: {color}"
-        )
-
-        x_min, x_max = self.find_min_max(df, x_column)
-        y_min, y_max = self.find_min_max(df, y_column, sol)
-
+    self,
+    title: str,
+    x_column: str,
+    y_column: str,
+    x_axis_label: str,
+    y_axis_label: str,
+    df: pd.DataFrame,
+    sol: Optional[float] = None,
+    color: str = "black",
+):
         if len(df) == 1:
-            x_padding = (x_max - x_min) * 0.1 if x_max > x_min else 1
-            y_padding = (y_max - y_min) * 0.1 if y_max > y_min else 1
+            # Handling the single data point case
+            single_x = df[x_column].iloc[0]
+            single_y = df[y_column].iloc[0]
 
-            x_range = Range1d(start=x_min - x_padding, end=x_max + x_padding)
-            y_range = Range1d(start=y_min - y_padding, end=y_max + y_padding)
-            x_axis_type = "linear"
+            x_padding = single_x * 0.1 if single_x > 0 else 1
+            y_padding = single_y * 0.1 if single_y > 0 else 1
+
+            x_range = Range1d(start=single_x - x_padding, end=single_x + x_padding)
+            y_range = Range1d(start=0, end=single_y + y_padding)
+
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type="linear",
+                y_range=y_range,
+                x_range=x_range
+            )
+
+            # Plot the single point
+            p.circle(x=[single_x], y=[single_y], size=10, color=color, legend_label=y_column)
+
+            # Add a label to the point
+            label = Label(
+                x=single_x, y=single_y,
+                text=f"Point: ({single_x}, {single_y})",
+                x_offset=10, y_offset=10,
+                text_baseline="middle",
+                text_align="left",
+                text_color="red"
+            )
+            p.add_layout(label)
 
         else:
-            # Check if x_min equals x_max
-            if x_min == x_max:
-                # Use iteration number as x-axis
-                df['iteration'] = range(1, len(df) + 1)
-                x_column = 'iteration'
-                x_axis_label = "Iteration"
-                x_axis_type = "linear"
-                x_range = Range1d(start=1, end=len(df))
-            else:
-                x_axis_type = "log"
-                x_range = None
-            
-            y_range=Range1d(start=0, end=y_max * 1.1)
+            # For multiple points, use original logic with log x-axis
+            x_min, x_max = self.find_min_max(df, x_column)
+            y_min, y_max = self.find_min_max(df, y_column, sol)
 
-        # Create a Bokeh figure with logarithmic x-axis
-        p = self.create_figure(
-            title=title_string,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type=x_axis_type,
-            y_range=y_range,
-            x_range=x_range
-        )
+            x_axis_type = "log"
+            x_range = None
+            y_range = Range1d(start=0, end=y_max * 1.1)
 
-        # Add main line plot
-        p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type=x_axis_type,
+                y_range=y_range,
+                x_range=x_range
+            )
 
-        self.add_sol_line(p, df, x_column, y_column, sol)
+            # Plot line for multiple points
+            p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
 
-        p.legend.location = "bottom_right"
+            # Add Speed-of-Light (SOL) reference line if provided
+            self.add_sol_line(p, df, x_column, y_column, sol)
 
-        if x_axis_type == "log":
-            p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-            p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-            p.xaxis.major_label_orientation = pi / 4
+            # Set legend location
+            p.legend.location = "bottom_right"
 
-        p.title.text = title_string
-        
+            # Configure axis settings for log scale
+            if x_axis_type == "log":
+                p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
+                p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
+                p.xaxis.major_label_orientation = pi / 4
+
         # Append plot to internal list for future rendering
         self.plots.append(p)
 
