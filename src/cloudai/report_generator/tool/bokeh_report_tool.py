@@ -285,17 +285,6 @@ class BokehReportTool:
             # Plot the single point
             p.circle(x=[single_x], y=[single_y], size=10, color=color, legend_label=y_column)
 
-            # Add a label to the point
-            label = Label(
-                x=single_x, y=single_y,
-                text=f"Point: ({single_x}, {single_y})",
-                x_offset=10, y_offset=10,
-                text_baseline="middle",
-                text_align="left",
-                text_color="red"
-            )
-            p.add_layout(label)
-
         else:
             # For multiple points, use original logic with log x-axis
             x_min, x_max = self.find_min_max(df, x_column)
