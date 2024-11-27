@@ -208,7 +208,7 @@ class BokehReportTool:
             )
 
             # Plot the single point
-            p.scatter(x=[single_x], y=[single_y], size=3, color=color, legend_label=y_column)
+            p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
 
         else :
 
@@ -275,49 +275,73 @@ class BokehReportTool:
             df (pd.DataFrame): DataFrame containing the data.
             sol (Optional[float]): Speed-of-light performance reference line.
         """
-        x_min, x_max = self.find_min_max(df, x_column)
-        y_max = 0
-        for y_column, _ in y_columns:
-            _, col_max = self.find_min_max(df, y_column, sol)
-            y_max = max(y_max, col_max)
+        if len(df) == 1:
+            # Handling the single data point case
+            single_x = df[x_column].iloc[0]
+            single_y = df[y_column].iloc[0]
 
-        # Check if x_min equals x_max
-        if x_min == x_max:
-            # Use iteration number as x-axis
-            df['iteration'] = range(1, len(df) + 1)
-            x_column = 'iteration'
-            x_axis_label = "Iteration"
-            x_axis_type = "linear"
-            x_range = Range1d(start=1, end=len(df))
-        else:
-            x_axis_type = "log"
-            x_range = None
-        
-        p = self.create_figure(
-            title="CloudAI " + title,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type=x_axis_type,
-            y_range=Range1d(start=0, end=y_max * 1.1),
-            x_range=x_range
-        )
+            x_padding = single_x * 0.1 if single_x > 0 else 1
+            y_padding = single_y * 0.1 if single_y > 0 else 1
 
-        # Adding lines for each data type specified
-        for y_column, color in y_columns:
-            p.line(
-                x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
+            x_range = Range1d(start=single_x - x_padding, end=single_x + x_padding)
+            y_range = Range1d(start=0, end=single_y + y_padding)
+
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type="linear",
+                y_range=y_range,
+                x_range=x_range
             )
-            y_max = max(y_max, df[y_column].max())
 
-        self.add_sol_line(p, df, x_column, "SOL", sol)
+            # Plot the single point
+            p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
+        
+        else:
+            x_min, x_max = self.find_min_max(df, x_column)
+            y_max = 0
+            for y_column, _ in y_columns:
+                _, col_max = self.find_min_max(df, y_column, sol)
+                y_max = max(y_max, col_max)
 
-        p.legend.location = "bottom_right"
+            # Check if x_min equals x_max
+            if x_min == x_max:
+                # Use iteration number as x-axis
+                df['iteration'] = range(1, len(df) + 1)
+                x_column = 'iteration'
+                x_axis_label = "Iteration"
+                x_axis_type = "linear"
+                x_range = Range1d(start=1, end=len(df))
+            else:
+                x_axis_type = "log"
+                x_range = None
+            
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type=x_axis_type,
+                y_range=Range1d(start=0, end=y_max * 1.1),
+                x_range=x_range
+            )
 
-        if x_axis_type == "log":
-            # Setting up custom tick formatter for log scale readability
-            p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-            p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-            p.xaxis.major_label_orientation = pi / 4
+            # Adding lines for each data type specified
+            for y_column, color in y_columns:
+                p.line(
+                    x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
+                )
+                y_max = max(y_max, df[y_column].max())
+
+            self.add_sol_line(p, df, x_column, "SOL", sol)
+
+            p.legend.location = "bottom_right"
+
+            if x_axis_type == "log":
+                # Setting up custom tick formatter for log scale readability
+                p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
+                p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
+                p.xaxis.major_label_orientation = pi / 4
 
         self.plots.append(p)
 
