@@ -276,27 +276,29 @@ class BokehReportTool:
             sol (Optional[float]): Speed-of-light performance reference line.
         """
         if len(df) == 1:
-            # Handling the single data point case
+        # Handling the single data point case with multiple y_columns
             single_x = df[x_column].iloc[0]
-            single_y = df[y_column].iloc[0]
-
             x_padding = single_x * 0.1 if single_x > 0 else 1
-            y_padding = single_y * 0.1 if single_y > 0 else 1
+            y_max = 0
 
-            x_range = Range1d(start=single_x - x_padding, end=single_x + x_padding)
-            y_range = Range1d(start=0, end=single_y + y_padding)
-
+            # Calculate y_max and plot each y_column
             p = self.create_figure(
                 title="CloudAI " + title,
                 x_axis_label=x_axis_label,
                 y_axis_label=y_axis_label,
                 x_axis_type="linear",
-                y_range=y_range,
-                x_range=x_range
+                y_range=None,
+                x_range=Range1d(start=single_x - x_padding, end=single_x + x_padding)
             )
 
-            # Plot the single point
-            p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
+            for y_column, color in y_columns:
+                single_y = df[y_column].iloc[0]
+                y_max = max(y_max, single_y)
+                p.scatter(x=[single_x], y=[single_y], size=10, color=color, legend_label=y_column)                
+
+            # Update y_range after plotting all points
+            y_padding = y_max * 0.1 if y_max > 0 else 1
+            p.y_range = Range1d(start=0, end=y_max + y_padding)
         
         else:
             x_min, x_max = self.find_min_max(df, x_column)
