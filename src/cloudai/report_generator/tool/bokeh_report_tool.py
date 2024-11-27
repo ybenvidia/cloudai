@@ -244,13 +244,13 @@ class BokehReportTool:
 
             self.add_sol_line(p, df, x_column, y_column, sol)
 
-            p.legend.location = "bottom_right"
-
             if x_axis_type == "log":
                 p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
                 p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
                 p.xaxis.major_label_orientation = pi / 4
         
+        p.legend.location = "bottom_right"
+
         # Append plot to internal list for future rendering
         self.plots.append(p)
 
@@ -335,14 +335,14 @@ class BokehReportTool:
 
             self.add_sol_line(p, df, x_column, "SOL", sol)
 
-            p.legend.location = "bottom_right"
-
             if x_axis_type == "log":
                 # Setting up custom tick formatter for log scale readability
                 p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
                 p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
                 p.xaxis.major_label_orientation = pi / 4
 
+        p.legend.location = "bottom_right"
+        
         self.plots.append(p)
 
     def finalize_report(self, output_filename: str):
