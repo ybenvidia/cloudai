@@ -227,9 +227,9 @@ class BokehReportTool:
                 )
 
                 # Plot min, max, and avg lines
-                p.line(x=x_column, y='min', source=ColumnDataSource(grouped), color='blue', legend_label='Min')
-                p.line(x=x_column, y='max', source=ColumnDataSource(grouped), color='red', legend_label='Max')
-                p.line(x=x_column, y='avg', source=ColumnDataSource(grouped), color='green', legend_label='Avg')
+                p.line(x=x_column, y='min', source=ColumnDataSource(grouped), color='blue', legend_label=f"{y_column} Min")
+                p.line(x=x_column, y='max', source=ColumnDataSource(grouped), color='red', legend_label=f"{y_column} Max")
+                p.line(x=x_column, y='avg', source=ColumnDataSource(grouped), color='green', legend_label=f"{y_column} Avg")
 
             else:
 
@@ -320,47 +320,65 @@ class BokehReportTool:
                 p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
         
         else:
-            x_min, x_max = self.find_min_max(df, x_column)
-            y_max = 0
-            for y_column, _ in y_columns:
-                _, col_max = self.find_min_max(df, y_column, sol)
-                y_max = max(y_max, col_max)
+            if df[x_column].duplicated().any():
+                grouped = df.groupby(x_column)[[y_column for y_column, _ in y_columns]].agg(['mean']).reset_index()
+                grouped.columns = [x_column] + [f"{y_column}_{stat}" for y_column, _ in y_columns for stat in ['avg']]
+                y_max = grouped.iloc[:, 1:].max().max()
 
-            # Check if x_min equals x_max
-            if x_min == x_max:
-                # Use iteration number as x-axis
-                df['iteration'] = range(1, len(df) + 1)
-                x_column = 'iteration'
-                x_axis_label = "Iteration"
-                x_axis_type = "linear"
-                x_range = Range1d(start=1, end=len(df))
-            else:
-                x_axis_type = "log"
-                x_range = None
-            
-            p = self.create_figure(
-                title="CloudAI " + title,
-                x_axis_label=x_axis_label,
-                y_axis_label=y_axis_label,
-                x_axis_type=x_axis_type,
-                y_range=Range1d(start=0, end=y_max * 1.1),
-                x_range=x_range
-            )
-
-            # Adding lines for each data type specified
-            for y_column, color in y_columns:
-                p.line(
-                    x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
+                p = self.create_figure(
+                    title="CloudAI " + title,
+                    x_axis_label=x_axis_label,
+                    y_axis_label=y_axis_label,
+                    x_axis_type="log",
+                    y_range=Range1d(start=0, end=y_max * 1.1)
                 )
-                y_max = max(y_max, df[y_column].max())
 
-            self.add_sol_line(p, df, x_column, "SOL", sol)
+                # Plot min, max, and avg lines for each y_column
+                for y_column, color in y_columns:
+                    p.line(x='size', y=f"{y_column}_avg", source=ColumnDataSource(grouped), color=color, legend_label=f"{y_column} Avg")
+            
+            else:
+                x_min, x_max = self.find_min_max(df, x_column)
+                y_max = 0
+                for y_column, _ in y_columns:
+                    _, col_max = self.find_min_max(df, y_column, sol)
+                    y_max = max(y_max, col_max)
 
-            if x_axis_type == "log":
-                # Setting up custom tick formatter for log scale readability
-                p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-                p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-                p.xaxis.major_label_orientation = pi / 4
+                # Check if x_min equals x_max
+                if x_min == x_max:
+                    # Use iteration number as x-axis
+                    df['iteration'] = range(1, len(df) + 1)
+                    x_column = 'iteration'
+                    x_axis_label = "Iteration"
+                    x_axis_type = "linear"
+                    x_range = Range1d(start=1, end=len(df))
+                else:
+                    x_axis_type = "log"
+                    x_range = None
+                
+                p = self.create_figure(
+                    title="CloudAI " + title,
+                    x_axis_label=x_axis_label,
+                    y_axis_label=y_axis_label,
+                    x_axis_type=x_axis_type,
+                    y_range=Range1d(start=0, end=y_max * 1.1),
+                    x_range=x_range
+                )
+
+                # Adding lines for each data type specified
+                for y_column, color in y_columns:
+                    p.line(
+                        x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column
+                    )
+                    y_max = max(y_max, df[y_column].max())
+
+                self.add_sol_line(p, df, x_column, "SOL", sol)
+
+                if x_axis_type == "log":
+                    # Setting up custom tick formatter for log scale readability
+                    p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
+                    p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
+                    p.xaxis.major_label_orientation = pi / 4
 
         p.legend.location = "bottom_right"
         
