@@ -322,7 +322,7 @@ class BokehReportTool:
         else:
             if df[x_column].duplicated().any():
                 grouped = df.groupby(x_column)[[y_column for y_column, _ in y_columns]].agg(['mean']).reset_index()
-                grouped.columns = [x_column] + [f"{y_column}_{stat}" for y_column, _ in y_columns for stat in ['avg']]
+                grouped.columns = ['size'] + [f"{y_column}_avg" for y_column, _ in y_columns]
                 y_max = grouped.iloc[:, 1:].max().max()
 
                 p = self.create_figure(
@@ -333,9 +333,9 @@ class BokehReportTool:
                     y_range=Range1d(start=0, end=y_max * 1.1)
                 )
 
-                # Plot min, max, and avg lines for each y_column
+                # Plot avg line for each y_column
                 for y_column, color in y_columns:
-                    p.line(x='size', y=f"{y_column}_avg", source=ColumnDataSource(grouped), color=color, legend_label=f"{y_column} Avg")
+                    p.line(x=x_column, y=f"{y_column}_avg", source=ColumnDataSource(grouped), color=color, legend_label=f"{y_column} Avg")
             
             else:
                 x_min, x_max = self.find_min_max(df, x_column)
