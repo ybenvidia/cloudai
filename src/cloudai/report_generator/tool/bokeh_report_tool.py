@@ -211,11 +211,11 @@ class BokehReportTool:
             p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
 
         else :
-            
+
             if df[x_column].duplicated().any():
                 grouped = df.groupby(x_column)[y_column].agg(['min', 'max', 'mean']).reset_index()
                 grouped.columns = [x_column, 'min', 'max', 'avg']
-                x_min, x_max = grouped[x_column].min(), grouped['size'].max()
+                x_min, x_max = grouped[x_column].min(), grouped[x_column].max()
                 y_min, y_max = grouped[['min', 'max', 'avg']].values.min(), grouped[['min', 'max', 'avg']].values.max()
 
                 p = self.create_figure(
