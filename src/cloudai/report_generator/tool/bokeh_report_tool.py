@@ -211,43 +211,64 @@ class BokehReportTool:
             p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
 
         else :
-
-            x_min, x_max = self.find_min_max(df, x_column)
-            y_min, y_max = self.find_min_max(df, y_column, sol)
-
-            # Check if x_min equals x_max
-            if x_min == x_max:
-                # Use iteration number as x-axis
-                df['iteration'] = range(1, len(df) + 1)
-                x_column = 'iteration'
-                x_axis_label = "Iteration"
-                x_axis_type = "linear"
-                x_range = Range1d(start=1, end=len(df))
-            else:
-                x_axis_type = "log"
-                x_range = None
             
-            y_range=Range1d(start=0, end=y_max * 1.1)
+            if df[x_column].duplicated().any():
+                grouped = df.groupby(x_column)[y_column].agg(['min', 'max', 'mean']).reset_index()
+                grouped.columns = [x_column, 'min', 'max', 'avg']
+                x_min, x_max = grouped[x_column].min(), grouped['size'].max()
+                y_min, y_max = grouped[['min', 'max', 'avg']].values.min(), grouped[['min', 'max', 'avg']].values.max()
 
-            # Create a Bokeh figure with logarithmic x-axis
-            p = self.create_figure(
-                title="CloudAI " + title,
-                x_axis_label=x_axis_label,
-                y_axis_label=y_axis_label,
-                x_axis_type=x_axis_type,
-                y_range=y_range,
-                x_range=x_range
-            )
+                p = self.create_figure(
+                    title="CloudAI " + title,
+                    x_axis_label=x_axis_label,
+                    y_axis_label=y_axis_label,
+                    x_axis_type="log",
+                    y_range=Range1d(start=0, end=y_max * 1.1)
+                )
 
-            # Add main line plot
-            p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+                # Plot min, max, and avg lines
+                p.line(x=x_column, y='min', source=ColumnDataSource(grouped), color='blue', legend_label='Min')
+                p.line(x=x_column, y='max', source=ColumnDataSource(grouped), color='red', legend_label='Max')
+                p.line(x=x_column, y='avg', source=ColumnDataSource(grouped), color='green', legend_label='Avg')
 
-            self.add_sol_line(p, df, x_column, y_column, sol)
+            else:
 
-            if x_axis_type == "log":
-                p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-                p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-                p.xaxis.major_label_orientation = pi / 4
+                x_min, x_max = self.find_min_max(df, x_column)
+                y_min, y_max = self.find_min_max(df, y_column, sol)
+
+                # Check if x_min equals x_max
+                if x_min == x_max:
+                    # Use iteration number as x-axis
+                    df['iteration'] = range(1, len(df) + 1)
+                    x_column = 'iteration'
+                    x_axis_label = "Iteration"
+                    x_axis_type = "linear"
+                    x_range = Range1d(start=1, end=len(df))
+                else:
+                    x_axis_type = "log"
+                    x_range = None
+                
+                y_range=Range1d(start=0, end=y_max * 1.1)
+
+                # Create a Bokeh figure with logarithmic x-axis
+                p = self.create_figure(
+                    title="CloudAI " + title,
+                    x_axis_label=x_axis_label,
+                    y_axis_label=y_axis_label,
+                    x_axis_type=x_axis_type,
+                    y_range=y_range,
+                    x_range=x_range
+                )
+
+                # Add main line plot
+                p.line(x=x_column, y=y_column, source=ColumnDataSource(df), line_width=2, color=color, legend_label=y_column)
+
+                self.add_sol_line(p, df, x_column, y_column, sol)
+
+                if x_axis_type == "log":
+                    p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
+                    p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
+                    p.xaxis.major_label_orientation = pi / 4
         
         p.legend.location = "bottom_right"
 
