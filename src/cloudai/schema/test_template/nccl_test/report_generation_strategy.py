@@ -19,6 +19,7 @@ import re
 from typing import List, Optional, Tuple
 
 import pandas as pd
+from pathlib import Path
 
 from cloudai import ReportGenerationStrategy
 from cloudai.report_generator.tool.bokeh_report_tool import BokehReportTool
@@ -141,7 +142,7 @@ class NcclTestReportGenerationStrategy(ReportGenerationStrategy):
             sol=sol
         )
 
-        report_tool.finalize_report("cloudai_nccl_test_bokeh_report.html")
+        report_tool.finalize_report(Path("cloudai_nccl_test_bokeh_report.html"))
 
     def _generate_csv_report(self, df: pd.DataFrame, directory_path: str) -> None:
         """
@@ -153,4 +154,4 @@ class NcclTestReportGenerationStrategy(ReportGenerationStrategy):
         """
         csv_report_tool = CSVReportTool(directory_path)
         csv_report_tool.set_dataframe(df)
-        csv_report_tool.finalize_report("cloudai_nccl_test_csv_report.csv")
+        csv_report_tool.finalize_report(Path("cloudai_nccl_test_csv_report.csv"))
