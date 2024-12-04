@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from math import pi
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pandas as pd
@@ -31,10 +31,10 @@ class BokehReportTool:
     Tool for creating interactive Bokeh plots.
 
     Attributes
-        output_directory (str): Directory to save the generated reports.
+        output_directory (Path): Directory to save the generated reports.
     """
 
-    def __init__(self, output_directory: str):
+    def __init__(self, output_directory: Path):
         self.output_directory = output_directory
         self.plots = []
 
@@ -145,6 +145,7 @@ class BokehReportTool:
     ):
         """
         Add a line plot with linear axes to the report tool.
+
         Includes an optional reference line representing the speed of light (SOL) performance.
 
         Args:
@@ -169,51 +170,31 @@ class BokehReportTool:
 
         self.plots.append(p)
 
-    def add_single_point_single_iteration_plot(
-        self,
-        df: pd.DataFrame,
-        title: str,
-        x_column: str,
-        y_column: str,
-        x_axis_label: str,
-        y_axis_label: str,
-        color: str,
-    ):
-        single_x = df[x_column].iloc[0]
-        single_y = df[y_column].iloc[0]
-
-        x_padding = single_x * 0.1 if single_x > 0 else 1
-        y_padding = single_y * 0.1 if single_y > 0 else 1
-
-        x_range = Range1d(start=single_x - x_padding, end=single_x + x_padding)
-        y_range = Range1d(start=0, end=single_y + y_padding)
-
-        p = self.create_figure(
-            title="CloudAI " + title,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type="linear",
-            y_range=y_range,
-            x_range=x_range,
-        )
-
-        p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
-
-        return p
-
-    def add_single_point_multi_iterations_plot(
+    def add_single_point_plot(
         self,
         df: pd.DataFrame,
         title: str,
         x_column: str,
         y_columns: List[Tuple[str, str]],
         x_axis_label: str,
-        y_axis_label: str
+        y_axis_label: str,
     ):
+        """
+        Create a scatter plot for a single data point.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the data.
+            title (str): Title of the plot.
+            x_column (str): The column used for the x-axis value.
+            y_columns (List[Tuple[str, str]]): A list of tuples specifying the y-axis column names and their colors.
+            x_axis_label (str): Label for the x-axis.
+            y_axis_label (str): Label for the y-axis.
+
+        Returns:
+            figure: A Bokeh figure with scatter plots.
+        """
         single_x = df[x_column].iloc[0]
         x_padding = single_x * 0.1 if single_x > 0 else 1
-
-        # Calculate y_max and create plot
         y_values = [df[y_column].iloc[0] for y_column, _ in y_columns]
         y_max = max(y_values)
         y_padding = y_max * 0.1 if y_max > 0 else 1
@@ -227,155 +208,97 @@ class BokehReportTool:
             x_range=Range1d(start=single_x - x_padding, end=single_x + x_padding),
         )
 
-        # Plot each y_column value and add labels
         for (y_column, color), single_y in zip(y_columns, y_values):
             p.scatter(x=[single_x], y=[single_y], size=6, color=color, legend_label=y_column)
 
         return p
 
-    def add_multiple_messages_single_iteration_plot(
-        self, df: pd.DataFrame, title: str, x_column: str, y_column: str, x_axis_label: str, y_axis_label: str
-    ):
-        grouped = df.groupby(x_column)[y_column].agg(["min", "max", "mean"]).reset_index()
-        grouped.columns = [x_column, "min", "max", "avg"]
-        _, y_max = grouped[["min", "max", "avg"]].values.min(), grouped[["min", "max", "avg"]].values.max()
-
-        p = self.create_figure(
-            title="CloudAI " + title,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type="log",
-            y_range=Range1d(start=0, end=y_max * 1.1),
-        )
-
-        # Plot min, max, and avg lines
-        p.line(x=x_column, y="min", source=ColumnDataSource(grouped), color="blue", legend_label=f"{y_column} Min")
-        p.line(x=x_column, y="max", source=ColumnDataSource(grouped), color="red", legend_label=f"{y_column} Max")
-        p.line(x=x_column, y="avg", source=ColumnDataSource(grouped), color="green", legend_label=f"{y_column} Avg")
-
-        return p
-
-    def add_multiple_messages_multiple_iterations_plot(
+    def add_multiple_messages_multi_lines_plot(
         self,
         df: pd.DataFrame,
         title: str,
         x_column: str,
         y_columns: List[Tuple[str, str]],
         x_axis_label: str,
-        y_axis_label: str
-    ):
-        grouped = df.groupby(x_column)[[y_column for y_column, _ in y_columns]].agg(["mean"]).reset_index()
-        grouped.columns = [x_column] + [f"{y_column}_avg" for y_column, _ in y_columns]
-        y_max = grouped.iloc[:, 1:].max().max()
-
-        p = self.create_figure(
-            title="CloudAI " + title,
-            x_axis_label=x_axis_label,
-            y_axis_label=y_axis_label,
-            x_axis_type="log",
-            y_range=Range1d(start=0, end=y_max * 1.1),
-        )
-
-        # Plot avg line for each y_column
-        for y_column, color in y_columns:
-            p.line(
-                x=x_column,
-                y=f"{y_column}_avg",
-                source=ColumnDataSource(grouped),
-                line_width=2,
-                color=color,
-                legend_label=f"{y_column} Avg",
-            )
-
-        return p
-
-    def add_log_x_linear_y_single_line_plot(
-        self,
-        title: str,
-        x_column: str,
-        y_column: str,
-        x_axis_label: str,
         y_axis_label: str,
-        df: pd.DataFrame,
-        sol: Optional[float] = None,
-        color: str = "black",
     ):
         """
-        Create a single line plot with a logarithmic x-axis and linear y-axis.
+        Create lines plot for multiple message sizes.
 
         Args:
+            df (pd.DataFrame): DataFrame containing the data.
             title (str): Title of the plot.
             x_column (str): The column used for the x-axis values.
-            y_column (str): The column used for the y-axis values.
+            y_columns (List[Tuple[str, str]]): A list of tuples specifying the y-axis column names and their colors.
             x_axis_label (str): Label for the x-axis.
             y_axis_label (str): Label for the y-axis.
-            df (pd.DataFrame): DataFrame containing the data.
-            sol (Optional[float]): Speed-of-light performance reference line.
-            color (str): Color of the line in the plot.
-        This function sets up a Bokeh figure and plots a single line of data. It also
-        optionally adds a reference line (SOL) if provided. The x-axis uses a logarithmic
-        scale, and custom JavaScript is used for tick formatting to enhance readability.
+
+        Returns:
+            figure: A Bokeh figure with line plots for multiple y-values.
         """
-        if len(df) == 1:
-            p = self.add_single_point_single_iteration_plot(
-                df, title, x_column, y_column, x_axis_label, y_axis_label, color
+        if len(y_columns) == 1:
+            grouped = df.groupby(x_column)[y_columns[0][0]].agg(["min", "max", "mean"]).reset_index()
+            grouped.columns = [x_column, "min", "max", "avg"]
+            y_max = grouped[["min", "max", "avg"]].values.max()
+
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type="log",
+                y_range=Range1d(start=0, end=y_max * 1.1),
+            )
+
+            # Plot min, max, and avg lines
+            p.line(
+                x=x_column,
+                y="min",
+                source=ColumnDataSource(grouped),
+                color="blue",
+                legend_label=f"{y_columns[0][0]} Min",
+            )
+
+            p.line(
+                x=x_column,
+                y="max",
+                source=ColumnDataSource(grouped),
+                color="red",
+                legend_label=f"{y_columns[0][0]} Max",
+            )
+
+            p.line(
+                x=x_column,
+                y="avg",
+                source=ColumnDataSource(grouped),
+                color="green",
+                legend_label=f"{y_columns[0][0]} Avg",
             )
 
         else:
-            if df[x_column].duplicated().any():
-                p = self.add_multiple_messages_single_iteration_plot(
-                    df, title, x_column, y_column, x_axis_label, y_axis_label
-                )
+            grouped = df.groupby(x_column)[[y_column for y_column, _ in y_columns]].agg(["mean"]).reset_index()
+            grouped.columns = [x_column] + [f"{y_column}_avg" for y_column, _ in y_columns]
+            y_max = grouped.iloc[:, 1:].max().max()
 
-            else:
-                x_min, x_max = self.find_min_max(df, x_column)
-                y_min, y_max = self.find_min_max(df, y_column, sol)
+            p = self.create_figure(
+                title="CloudAI " + title,
+                x_axis_label=x_axis_label,
+                y_axis_label=y_axis_label,
+                x_axis_type="log",
+                y_range=Range1d(start=0, end=y_max * 1.1),
+            )
 
-                # Check if x_min equals x_max
-                if x_min == x_max:
-                    # Use iteration number as x-axis
-                    df["iteration"] = range(1, len(df) + 1)
-                    x_column = "iteration"
-                    x_axis_label = "Iteration"
-                    x_axis_type = "linear"
-                    x_range = Range1d(start=1, end=len(df))
-                else:
-                    x_axis_type = "log"
-                    x_range = None
-
-                y_range = Range1d(start=0, end=y_max * 1.1)
-
-                # Create a Bokeh figure with logarithmic x-axis
-                p = self.create_figure(
-                    title="CloudAI " + title,
-                    x_axis_label=x_axis_label,
-                    y_axis_label=y_axis_label,
-                    x_axis_type=x_axis_type,
-                    y_range=y_range,
-                    x_range=x_range,
-                )
-
-                # Add main line plot
+            # Plot avg line for each y_column
+            for y_column, color in y_columns:
                 p.line(
                     x=x_column,
-                    y=y_column,
-                    source=ColumnDataSource(df),
+                    y=f"{y_column}_avg",
+                    source=ColumnDataSource(grouped),
                     line_width=2,
                     color=color,
-                    legend_label=y_column,
+                    legend_label=f"{y_column} Avg",
                 )
 
-                self.add_sol_line(p, df, x_column, y_column, sol)
-
-                if x_axis_type == "log":
-                    p.xaxis.ticker = calculate_power_of_two_ticks(x_min, x_max)
-                    p.xaxis.formatter = CustomJSTickFormatter(code=bokeh_size_unit_js_tick_formatter)
-                    p.xaxis.major_label_orientation = pi / 4
-
-        p.legend.location = "bottom_right"
-
-        # Append plot to internal list for future rendering
-        self.plots.append(p)
+        return p
 
     def add_log_x_linear_y_multi_line_plot(
         self,
@@ -400,11 +323,11 @@ class BokehReportTool:
             sol (Optional[float]): Speed-of-light performance reference line.
         """
         if len(df) == 1:
-            p = self.add_single_point_multi_iterations_plot(df, title, x_column, y_columns, x_axis_label, y_axis_label)
+            p = self.add_single_point_plot(df, title, x_column, y_columns, x_axis_label, y_axis_label)
 
         else:
             if df[x_column].duplicated().any():
-                p = self.add_multiple_messages_multiple_iterations_plot(
+                p = self.add_multiple_messages_multi_lines_plot(
                     df, title, x_column, y_columns, x_axis_label, y_axis_label
                 )
 
@@ -415,7 +338,10 @@ class BokehReportTool:
                     _, col_max = self.find_min_max(df, y_column, sol)
                     y_max = max(y_max, col_max)
 
-                # Check if x_min equals x_max
+                x_axis_type = "log"
+                x_range = None
+
+                # Check if x_min equals x_max - constant message size
                 if x_min == x_max:
                     # Use iteration number as x-axis
                     df["iteration"] = range(1, len(df) + 1)
@@ -423,9 +349,6 @@ class BokehReportTool:
                     x_axis_label = "Iteration"
                     x_axis_type = "linear"
                     x_range = Range1d(start=1, end=len(df))
-                else:
-                    x_axis_type = "log"
-                    x_range = None
 
                 p = self.create_figure(
                     title="CloudAI " + title,
@@ -446,6 +369,7 @@ class BokehReportTool:
                         color=color,
                         legend_label=y_column,
                     )
+
                     y_max = max(y_max, df[y_column].max())
 
                 self.add_sol_line(p, df, x_column, "SOL", sol)
@@ -457,17 +381,16 @@ class BokehReportTool:
                     p.xaxis.major_label_orientation = pi / 4
 
         p.legend.location = "bottom_right"
-
         self.plots.append(p)
 
-    def finalize_report(self, output_filename: str):
+    def finalize_report(self, output_filename: Path):
         """
         Save all accumulated plots to a single HTML file.
 
         Args:
-            output_filename (str): output_filename to save the final report.
+            output_filename (Path): Path to save the final report.
         """
-        output_filepath = os.path.join(self.output_directory, output_filename)
+        output_filepath = self.output_directory / output_filename
         output_file(output_filepath)
         save(column(*self.plots))
         self.plots = []  # Clear the list after saving to prepare for future use.
