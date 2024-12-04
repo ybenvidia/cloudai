@@ -104,7 +104,6 @@ class UCCTestReportGenerationStrategy(ReportGenerationStrategy):
                 y_axis_label="Bandwidth (GB/s)",
                 df=df,
                 sol=sol,
-                color=color,
             )
 
         combined_columns = [

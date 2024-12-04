@@ -127,8 +127,7 @@ class NcclTestReportGenerationStrategy(ReportGenerationStrategy):
                 x_axis_label="Message Size",
                 y_axis_label="Bandwidth (GB/s)",
                 df=df,
-                sol=sol,
-                color=color,
+                sol=sol
             )
 
         combined_columns = [("Busbw (GB/s) Out-of-place", "blue"), ("Busbw (GB/s) In-place", "green")]
@@ -139,7 +138,7 @@ class NcclTestReportGenerationStrategy(ReportGenerationStrategy):
             x_axis_label="Message Size",
             y_axis_label="Bandwidth (GB/s)",
             df=df,
-            sol=sol,
+            sol=sol
         )
 
         report_tool.finalize_report("cloudai_nccl_test_bokeh_report.html")
