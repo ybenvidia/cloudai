@@ -1,7 +1,7 @@
 DeepEP Benchmark
 ================
 
-This workload (``test_template_name`` is ``DeepEP``) allows users to execute DeepEP (Deep Expert Parallelism) MoE (Mixture of Experts) benchmarks within the CloudAI framework.
+DeepEP Benchmark workload (``test_template_name`` is ``DeepEP``) allows users to execute DeepEP (Deep Expert Parallelism) MoE (Mixture of Experts) benchmarks within the CloudAI framework.
 
 Overview
 --------
@@ -105,4 +105,3 @@ Test Definition
 .. autoclass:: cloudai.workloads.deepep.deepep.DeepEPTestDefinition
    :members:
    :show-inheritance:
-

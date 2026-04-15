@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,39 +14,81 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name = "vLLM-Qwen3-0.6B"
-description = "vLLM backend with Qwen3-0.6B model"
+name = "vLLM"
+description = "vLLM backend"
 test_template_name = "AIDynamo"
+extra_container_mounts = ["/run/udev:/run/udev", "/tmp:/tmp"]
 
 [cmd_args]
-docker_image_url = "nvcr.io/nvidia/ai-dynamo/vllm-runtime:0.7.0"
+docker_image_url = "nvcr.io/nvidia/ai-dynamo/vllm-runtime:0.8.1"
+workloads = "genai_perf.sh"
 
   [cmd_args.dynamo]
   backend = "vllm"
   model = "Qwen/Qwen3-0.6B"
-  workspace-path = "/workspace/examples/backends/vllm"
-  prefill-cmd = 'python3 -m dynamo.vllm --is-prefill-worker'
-  decode-cmd = 'python3 -m dynamo.vllm'
+
+    [cmd_args.dynamo.prefill_worker]
+    num-nodes = 1
+    cmd = 'python3 -m dynamo.vllm --is-prefill-worker'
+    worker-initialized-regex = 'VllmWorker.*has.been.initialized'
+    extra-args = "--no-enable-expert-parallel"
+
+      [cmd_args.dynamo.prefill_worker.args]
+      gpu-memory-utilization = 0.8
+      tensor-parallel-size = 8
+      pipeline-parallel-size = 1
+      data-parallel-size = 1
 
     [cmd_args.dynamo.decode_worker]
-    pipeline-parallel-size = 1
+    num-nodes = 1
+    cmd = 'python3 -m dynamo.vllm'
+    worker-initialized-regex = 'VllmWorker.*has.been.initialized'
+    extra-args = "--no-enable-expert-parallel"
+
+      [cmd_args.dynamo.decode_worker.args]
+      gpu-memory-utilization = 0.8
+      tensor-parallel-size = 8
+      pipeline-parallel-size = 1
+      data-parallel-size = 1
+
+  [cmd_args.lmcache]
+  controller_cmd = "lmcache_controller --host localhost --port 9000 --monitor-port 9001"
+
+    [cmd_args.lmcache.args]
+    chunk_size = 256
+    local_cpu = false
+    nixl_buffer_size = 10737418240
+    nixl_buffer_device = "cuda"
+    extra_config_enable_nixl_storage = true
+    extra_config_nixl_backend = "GDS_MT"
+    extra_config_nixl_file_pool_size = 64
+
+    enable_controller = true
+    lmcache_instance_id = "lmcache_default_instance"
+    controller_url = "localhost:9001"
+    lmcache_worker_port = 8788
+    distributed_url = "localhost:8789"
 
   [cmd_args.genai_perf]
-  model = "Qwen/Qwen3-0.6B"
-  endpoint = "v1/chat/completions"
-  endpoint-type = "chat"
-  extra-inputs = 'min_tokens:10'
-  output-tokens-mean = 500
-  output-tokens-stddev = 0
-  random-seed = 123
-  request-count = 50
-  synthetic-input-tokens-mean = 300
-  synthetic-input-tokens-stddev = 0
-  warmup-request-count = 5
-  concurrency = 2
-  extra-args = "--streaming -- -v --async"
+  cmd = "genai-perf profile"
+  extra-args = "--streaming --verbose -- -v --async"
+
+    [cmd_args.genai_perf.args]
+    endpoint-type = "chat"
+    extra-inputs = 'min_tokens:10'
+    output-tokens-mean = 500
+    output-tokens-stddev = 0
+    random-seed = 123
+    request-count = 50
+    synthetic-input-tokens-mean = 300
+    synthetic-input-tokens-stddev = 0
+    warmup-request-count = 5
+    concurrency = 2
 
 [extra_env_vars]
 UCX_LOG_LEVEL = "warn"
-UCX_TLS = "cuda_copy,rc_x"
+HF_HUB_OFFLINE = "1"
+TRANSFORMERS_OFFLINE = "1"
+HF_DATASETS_OFFLINE = "1"
 DYNAMO_NODELIST = "$(scontrol show hostname $SLURM_JOB_NODELIST | tr -s '\\n' ',')"
+UCX_TLS = "all"

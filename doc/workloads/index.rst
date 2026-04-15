@@ -1,7 +1,7 @@
-Workloads Documentation
-=======================
+Workloads
+=========
 
-This section contains automatically generated documentation for all CloudAI workloads. Each workload provides specific functionality for running different types of tests and benchmarks.
+This chapter contains automatically generated documentation for all CloudAI workloads. Each workload provides specific functionality for running different types of tests and benchmarks.
 
 Available Workloads
 -------------------
@@ -23,12 +23,15 @@ Available Workloads
    ":doc:`nemo_launcher`", "✅", "❌", "❌", "❌"
    ":doc:`nemo_run`", "✅", "❌", "❌", "❌"
    ":doc:`nixl_bench`", "✅", "❌", "❌", "❌"
+   ":doc:`nixl_ep`", "✅", "❌", "❌", "❌"
    ":doc:`nixl_kvbench`", "✅", "❌", "❌", "❌"
    ":doc:`nixl_perftest`", "✅", "❌", "❌", "❌"
    ":doc:`sleep`", "✅", "✅", "❌", "✅"
+   ":doc:`sglang`", "✅", "❌", "❌", "❌"
    ":doc:`slurm_container`", "✅", "❌", "❌", "❌"
    "Triton Inference", "✅", "❌", "❌", "❌"
    ":doc:`ucc`", "✅", "❌", "❌", "❌"
+   ":doc:`vllm`", "✅", "❌", "❌", "❌"
 
 .. toctree::
     :hidden:

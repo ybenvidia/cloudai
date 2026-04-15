@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import argparse
+import json
 from functools import partial
 from importlib.metadata import version
 from pathlib import Path
@@ -33,9 +34,11 @@ from cloudai.workloads.ai_dynamo import (
     AIDynamoArgs,
     AIDynamoCmdArgs,
     AIDynamoTestDefinition,
-    DecodeWorkerArgs,
-    GenAIPerfArgs,
-    PrefillWorkerArgs,
+    GenAIPerf,
+    LMCache,
+    LMCacheArgs,
+    WorkerBaseArgs,
+    WorkerConfig,
 )
 from cloudai.workloads.ddlb import DDLBCmdArgs, DDLBTestDefinition
 from cloudai.workloads.deepep import (
@@ -47,6 +50,10 @@ from cloudai.workloads.jax_toolbox import (
     GPTTestDefinition,
     GrokCmdArgs,
     GrokTestDefinition,
+)
+from cloudai.workloads.megatron_bridge import (
+    MegatronBridgeCmdArgs,
+    MegatronBridgeTestDefinition,
 )
 from cloudai.workloads.megatron_run import (
     MegatronRunCmdArgs,
@@ -60,9 +67,11 @@ from cloudai.workloads.nemo_launcher import (
 )
 from cloudai.workloads.nemo_run import NeMoRunCmdArgs, NeMoRunTestDefinition
 from cloudai.workloads.nixl_bench import NIXLBenchCmdArgs, NIXLBenchTestDefinition
+from cloudai.workloads.nixl_ep import NixlEPCmdArgs, NixlEPTestDefinition
 from cloudai.workloads.nixl_kvbench import NIXLKVBenchCmdArgs, NIXLKVBenchTestDefinition
 from cloudai.workloads.nixl_perftest import NixlPerftestCmdArgs, NixlPerftestTestDefinition
 from cloudai.workloads.osu_bench import OSUBenchCmdArgs, OSUBenchTestDefinition
+from cloudai.workloads.sglang import SglangArgs, SglangCmdArgs, SglangTestDefinition
 from cloudai.workloads.sleep import SleepCmdArgs, SleepTestDefinition
 from cloudai.workloads.slurm_container import (
     SlurmContainerCmdArgs,
@@ -73,6 +82,7 @@ from cloudai.workloads.triton_inference import (
     TritonInferenceTestDefinition,
 )
 from cloudai.workloads.ucc_test import UCCCmdArgs, UCCTestDefinition
+from cloudai.workloads.vllm import VllmArgs, VllmCmdArgs, VllmTestDefinition
 
 SLURM_TEST_SCENARIOS = [
     {"path": Path("conf/common/test_scenario/sleep.toml"), "expected_dirs_number": 4, "log_file": "sleep_debug.log"},
@@ -108,7 +118,7 @@ class TestInDryRun:
             log_file="debug.log",
         )
         with (
-            patch("asyncio.sleep", return_value=None),
+            patch("time.sleep", return_value=None),
             patch("cloudai.systems.slurm.SlurmSystem.is_job_completed", return_value=True),
             patch("cloudai.systems.slurm.SlurmSystem.is_job_running", return_value=True),
             patch("cloudai.util.command_shell.CommandShell.execute") as mock_execute,
@@ -163,8 +173,8 @@ def partial_tr(slurm_system: SlurmSystem) -> partial[TestRun]:
     return partial(TestRun, num_nodes=1, nodes=[], output_path=slurm_system.output_path)
 
 
-def create_test_run(partial_tr: partial[TestRun], name: str, test_definition: TestDefinition) -> TestRun:
-    tr = partial_tr(name=name, test=test_definition)
+def create_test_run(partial_tr: partial[TestRun], name: str, test_definition: TestDefinition, **kwargs) -> TestRun:
+    tr = partial_tr(name=name, test=test_definition, **kwargs)
     return tr
 
 
@@ -255,13 +265,21 @@ def build_special_test_run(
         "nemo-run-vboost",
         "slurm_container",
         "megatron-run",
+        "megatron-bridge",
         "triton-inference",
         "nixl_bench",
+        "nixl-ep",
         "ai-dynamo",
         "nixl-perftest",
         "nixl-kvbench",
         "deepep-benchmark",
         "osu-bench",
+        "sglang",
+        "sglang-disagg",
+        "sglang-disagg-2nodes",
+        "vllm",
+        "vllm-disagg",
+        "vllm-disagg-2nodes",
     ]
 )
 def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -> Tuple[TestRun, str, Optional[str]]:
@@ -383,6 +401,34 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
                 ),
             ),
         ),
+        "nixl-ep": lambda: create_test_run(
+            partial_tr,
+            "nixl-ep",
+            NixlEPTestDefinition(
+                name="nixl-ep",
+                description="nixl-ep",
+                test_template_name="NixlEP",
+                cmd_args=NixlEPCmdArgs.model_validate(
+                    {
+                        "docker_image_url": "docker.io/nvidia/nixl-ep:latest",
+                        "elastic_script": "/workspace/nixl/examples/device/ep/tests/elastic/elastic.py",
+                        "plan": json.dumps(
+                            [[0, 1, 2, 3], [0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 2, 3, 4, -6, 7], [0, 1, 2, 3, 4, 5, 6, 7]]
+                        ),
+                        "num_processes_per_node": 4,
+                        "service_startup_timeout_seconds": 90,
+                        "store_port": 9999,
+                        "num_tokens": 256,
+                        "num_experts_per_rank": 4,
+                        "hidden_dim": 8192,
+                        "num_topk": 6,
+                        "disable_ll_nvlink": True,
+                        "kineto": True,
+                    }
+                ),
+                extra_env_vars={"LD_LIBRARY_PATH": "/workspace/rdma_core/lib:$LD_LIBRARY_PATH"},
+            ),
+        ),
         "nixl_bench": lambda: create_test_run(
             partial_tr,
             "nixl_bench",
@@ -442,7 +488,7 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
                 name="ai-dynamo",
                 description="AI Dynamo test",
                 test_template_name="ai-dynamo",
-                dynamo_repo=GitRepo(
+                repo=GitRepo(
                     url="https://github.com/ai-dynamo/dynamo.git",
                     commit="f7e468c7e8ff0d1426db987564e60572167e8464",
                     installed_path=slurm_system.install_path,
@@ -452,21 +498,26 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
                     dynamo=AIDynamoArgs(
                         model="model",
                         backend="vllm",
+                        endpoint="v1/chat/completions",
                         workspace_path="/workspace",
-                        prefill_worker=PrefillWorkerArgs(
+                        prefill_worker=WorkerConfig(
+                            cmd="python3 -m dynamo.vllm --is-prefill-worker",
+                            worker_initialized_regex="VllmWorker.*has.been.initialized",
                             **{
                                 "num-nodes": 1,
-                                "ServiceArgs": {"workers": 1, "resources": {"gpu": "8"}},
-                            }
+                                "args": WorkerBaseArgs(),
+                            },
                         ),
-                        decode_worker=DecodeWorkerArgs(
+                        decode_worker=WorkerConfig(
+                            cmd="python3 -m dynamo.vllm",
+                            worker_initialized_regex="VllmWorker.*has.been.initialized",
                             **{
                                 "num-nodes": 1,
-                                "ServiceArgs": {"workers": 1, "resources": {"gpu": "8"}},
-                            }
+                                "args": WorkerBaseArgs(),
+                            },
                         ),
                     ),
-                    genai_perf=GenAIPerfArgs(
+                    genai_perf=GenAIPerf(
                         **{
                             "streaming": True,
                             "extra-inputs": '{"temperature": 0.7, "max_tokens": 128}',
@@ -476,6 +527,14 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
                             "synthetic-input-tokens-mean": 550,
                             "warmup-request-count": 10,
                         }
+                    ),
+                    lmcache=LMCache(
+                        args=LMCacheArgs(),
+                        repo=GitRepo(
+                            url="https://github.com/LMCache/LMCache.git",
+                            commit="ab8530993992db873869ba882320953582d94309",
+                            installed_path=slurm_system.install_path,
+                        ),
                     ),
                 ),
             ),
@@ -490,6 +549,126 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
                 cmd_args=DeepEPCmdArgs(
                     docker_image_url="docker/image:url",
                 ),
+            ),
+        ),
+        "megatron-bridge": lambda: create_test_run(
+            partial_tr,
+            "megatron-bridge",
+            MegatronBridgeTestDefinition(
+                name="megatron-bridge",
+                description="Megatron-Bridge benchmark",
+                test_template_name="MegatronBridge",
+                cmd_args=MegatronBridgeCmdArgs(
+                    container_image=str(slurm_system.output_path / "megatron_bridge_image.sqsh"),
+                    hf_token="dummy_token",
+                    model_family_name="qwen3",
+                    model_recipe_name="30b_a3b",
+                    num_gpus=8,
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0,1,2,3", "NCCL_DEBUG": "INFO"},
+                extra_container_mounts=[],
+                git_repos=[
+                    GitRepo(
+                        url="https://github.com/NVIDIA-NeMo/Megatron-Bridge.git",
+                        commit="main",
+                        mount_as="/opt/Megatron-Bridge",
+                    )
+                ],
+            ),
+            time_limit="00:20:00",
+        ),
+        "vllm": lambda: create_test_run(
+            partial_tr,
+            "vllm",
+            VllmTestDefinition(
+                name="vllm",
+                description="vLLM benchmark",
+                test_template_name="Vllm",
+                cmd_args=VllmCmdArgs(
+                    docker_image_url="nvcr.io/nvidia/vllm:latest",
+                    model="Qwen/Qwen3-0.6B",
+                    port=8000,
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0"},
+            ),
+        ),
+        "sglang": lambda: create_test_run(
+            partial_tr,
+            "sglang",
+            SglangTestDefinition(
+                name="sglang",
+                description="SGLang benchmark",
+                test_template_name="sglang",
+                cmd_args=SglangCmdArgs(
+                    docker_image_url="docker.io/lmsysorg/sglang:dev",
+                    model="Qwen/Qwen3-8B",
+                    port=8000,
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0"},
+            ),
+        ),
+        "sglang-disagg": lambda: create_test_run(
+            partial_tr,
+            "sglang-disagg",
+            SglangTestDefinition(
+                name="sglang-disagg",
+                description="SGLang disaggregated benchmark",
+                test_template_name="sglang",
+                cmd_args=SglangCmdArgs(
+                    docker_image_url="docker.io/lmsysorg/sglang:dev",
+                    model="Qwen/Qwen3-8B",
+                    port=8000,
+                    prefill=SglangArgs(),
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
+            ),
+        ),
+        "sglang-disagg-2nodes": lambda: create_test_run(
+            partial_tr,
+            "sglang-disagg-2nodes",
+            SglangTestDefinition(
+                name="sglang-disagg-2nodes",
+                description="SGLang disaggregated benchmark on 2 nodes",
+                test_template_name="sglang",
+                cmd_args=SglangCmdArgs(
+                    docker_image_url="docker.io/lmsysorg/sglang:dev",
+                    model="Qwen/Qwen3-8B",
+                    port=8000,
+                    prefill=SglangArgs(),
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
+            ),
+        ),
+        "vllm-disagg": lambda: create_test_run(
+            partial_tr,
+            "vllm-disagg",
+            VllmTestDefinition(
+                name="vllm-disagg",
+                description="vLLM disaggregated benchmark",
+                test_template_name="Vllm",
+                cmd_args=VllmCmdArgs(
+                    docker_image_url="nvcr.io/nvidia/vllm:latest",
+                    model="Qwen/Qwen3-0.6B",
+                    port=8000,
+                    prefill=VllmArgs(),
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
+            ),
+        ),
+        "vllm-disagg-2nodes": lambda: create_test_run(
+            partial_tr,
+            "vllm-disagg-2nodes",
+            VllmTestDefinition(
+                name="vllm-disagg-2nodes",
+                description="vLLM disaggregated benchmark on 2 nodes",
+                test_template_name="Vllm",
+                cmd_args=VllmCmdArgs(
+                    docker_image_url="nvcr.io/nvidia/vllm:latest",
+                    model="Qwen/Qwen3-0.6B",
+                    port=8000,
+                    prefill=VllmArgs(),
+                ),
+                extra_env_vars={"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
             ),
         ),
     }
@@ -510,12 +689,13 @@ def test_req(request, slurm_system: SlurmSystem, partial_tr: partial[TestRun]) -
             tr.test.extra_env_vars["NIM_CACHE_PATH"] = str(tr.output_path)
         if request.param in {"nixl_bench", "nixl-kvbench"}:
             tr.num_nodes = 2
+        if request.param == "nixl-ep":
+            tr.num_nodes = 3
         if request.param == "ai-dynamo":
             tr.num_nodes = 2
-            hf_home = tr.output_path / "hf_home"
-            hf_home.mkdir(parents=True, exist_ok=True)
-            tr.test.cmd_args.huggingface_home_host_path = str(hf_home)
         if request.param == "deepep-benchmark":
+            tr.num_nodes = 2
+        if request.param in {"sglang-disagg-2nodes", "vllm-disagg-2nodes"}:
             tr.num_nodes = 2
         return tr, f"{request.param}.sbatch", None
 

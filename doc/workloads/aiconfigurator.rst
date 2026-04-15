@@ -1,7 +1,7 @@
 AIConfigurator
 ==============
 
-This workload (`test_template_name` is ``Aiconfigurator``) runs the AIConfigurator predictor using the installed
+AIConfigurator workload (`test_template_name` is ``Aiconfigurator``) runs the AIConfigurator predictor using the installed
 ``aiconfigurator`` Python package. It is a **Standalone** workload (no Slurm/Kubernetes/RunAI required).
 
 Outputs
@@ -110,5 +110,3 @@ Report Generation Strategy
 .. autoclass:: cloudai.workloads.aiconfig.report_generation_strategy.AiconfiguratorReportGenerationStrategy
    :members:
    :show-inheritance:
-
-

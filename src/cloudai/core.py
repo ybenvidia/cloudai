@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,8 @@ from ._core.registry import Registry
 from ._core.report_generation_strategy import ReportGenerationStrategy
 from ._core.runner import Runner
 from ._core.system import System
-from ._core.test_scenario import METRIC_ERROR, TestDependency, TestRun, TestScenario
-from .configurator.base_agent import BaseAgent
+from ._core.test_scenario import METRIC_ERROR, MetricErrorSentinel, MetricValue, TestDependency, TestRun, TestScenario
+from .configurator.base_agent import BaseAgent, BaseAgentConfig, RewardOverrides
 from .configurator.cloudai_gym import CloudAIGymEnv
 from .configurator.grid_search import GridSearchAgent
 from .models.workload import CmdArgs, NsysConfiguration, PredictorConfig, TestDefinition
@@ -52,6 +52,7 @@ from .test_scenario_parser import TestScenarioParser
 __all__ = [
     "METRIC_ERROR",
     "BaseAgent",
+    "BaseAgentConfig",
     "BaseInstaller",
     "BaseJob",
     "BaseRunner",
@@ -71,6 +72,8 @@ __all__ = [
     "JobIdRetrievalError",
     "JobStatusResult",
     "JsonGenStrategy",
+    "MetricErrorSentinel",
+    "MetricValue",
     "MissingTestError",
     "NsysConfiguration",
     "Parser",
@@ -80,6 +83,7 @@ __all__ = [
     "Registry",
     "ReportGenerationStrategy",
     "Reporter",
+    "RewardOverrides",
     "Runner",
     "StatusReporter",
     "System",

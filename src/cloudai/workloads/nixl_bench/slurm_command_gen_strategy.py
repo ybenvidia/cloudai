@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,8 +16,6 @@
 
 from typing import cast
 
-from cloudai.core import TestRun
-from cloudai.systems.slurm import SlurmSystem
 from cloudai.workloads.common.nixl import NIXLCmdGenBase
 
 from .nixl_bench import NIXLBenchTestDefinition
@@ -25,17 +23,6 @@ from .nixl_bench import NIXLBenchTestDefinition
 
 class NIXLBenchSlurmCommandGenStrategy(NIXLCmdGenBase):
     """Command generation strategy for NIXL Bench tests."""
-
-    def __init__(self, system: SlurmSystem, test_run: TestRun) -> None:
-        super().__init__(system, test_run)
-
-        self._current_image_url: str | None = None
-
-    def image_path(self) -> str | None:
-        return self._current_image_url
-
-    def _container_mounts(self) -> list[str]:
-        return []
 
     @property
     def tdef(self) -> NIXLBenchTestDefinition:
@@ -68,6 +55,6 @@ class NIXLBenchSlurmCommandGenStrategy(NIXLCmdGenBase):
         for k, v in tdef.cmd_args_dict.items():
             if k == "etcd_endpoints":
                 k = "etcd-endpoints"
-            cmd.append(f"--{k} {v}")
+            cmd.append(f"--{k}={v}")
 
         return cmd

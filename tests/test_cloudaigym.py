@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from cloudai.configurator import CloudAIGymEnv, GridSearchAgent
-from cloudai.core import BaseRunner, Runner, TestRun, TestScenario
+from cloudai.configurator import CloudAIGymEnv, GridSearchAgent, TrajectoryEntry
+from cloudai.core import BaseRunner, RewardOverrides, Runner, TestRun, TestScenario
 from cloudai.systems.slurm import SlurmSystem
 from cloudai.util import flatten_dict
 from cloudai.workloads.nemo_run import (
@@ -83,7 +83,7 @@ def setup_env(slurm_system: SlurmSystem, nemorun: NeMoRunTestDefinition) -> tupl
 
 def test_observation_space(setup_env: tuple[TestRun, BaseRunner]):
     test_run, runner = setup_env
-    env = CloudAIGymEnv(test_run=test_run, runner=runner)
+    env = CloudAIGymEnv(test_run=test_run, runner=runner, rewards=RewardOverrides())
     observation_space = env.define_observation_space()
 
     expected_observation_space = [0.0]
@@ -125,7 +125,7 @@ def test_observation_space(setup_env: tuple[TestRun, BaseRunner]):
 )
 def test_compute_reward(reward_function, test_cases, base_tr: TestRun):
     base_tr.test.agent_reward_function = reward_function
-    env = CloudAIGymEnv(test_run=base_tr, runner=MagicMock())
+    env = CloudAIGymEnv(test_run=base_tr, runner=MagicMock(), rewards=RewardOverrides())
 
     for input_value, expected_reward in test_cases:
         reward = env.compute_reward(input_value)
@@ -136,7 +136,7 @@ def test_compute_reward_invalid(base_tr: TestRun):
     base_tr.test.agent_reward_function = "nonexistent"
 
     with pytest.raises(KeyError) as exc_info:
-        CloudAIGymEnv(test_run=base_tr, runner=MagicMock())
+        CloudAIGymEnv(test_run=base_tr, runner=MagicMock(), rewards=RewardOverrides())
 
     assert "Reward function 'nonexistent' not found" in str(exc_info.value)
     assert (
@@ -148,14 +148,45 @@ def test_compute_reward_invalid(base_tr: TestRun):
 def test_tr_output_path(setup_env: tuple[TestRun, BaseRunner]):
     test_run, runner = setup_env
     test_run.test.cmd_args.data.global_batch_size = 8  # avoid constraint check failure
-    env = CloudAIGymEnv(test_run=test_run, runner=runner)
-    agent = GridSearchAgent(env)
+    env = CloudAIGymEnv(test_run=test_run, runner=runner, rewards=RewardOverrides())
+    agent = GridSearchAgent(env, GridSearchAgent.get_config_class()())
 
     _, action = agent.select_action()
     env.test_run.step = 42
     env.step(action)
 
     assert env.test_run.output_path.name == "42"
+
+
+@pytest.mark.parametrize(
+    "rewards, expected_reward",
+    [
+        pytest.param(RewardOverrides(), -1.0, id="default_penalty"),
+        pytest.param(RewardOverrides(constraint_failure=-2.5), -2.5, id="custom_penalty"),
+    ],
+)
+def test_constraint_failure(nemorun: NeMoRunTestDefinition, rewards: RewardOverrides, expected_reward: float):
+    tdef = nemorun.model_copy(deep=True)
+    tdef.cmd_args.data.global_batch_size = 8
+    tdef.agent_metrics = ["default"]
+    test_run = TestRun(
+        name="constraint_fail_tr",
+        test=tdef,
+        num_nodes=1,
+        nodes=[],
+        reports={NeMoRunReportGenerationStrategy},
+    )
+    runner = MagicMock(spec=BaseRunner)
+    runner.system = MagicMock()
+    env = CloudAIGymEnv(test_run=test_run, runner=runner, rewards=rewards)
+
+    bad = {"trainer.strategy.context_parallel_size": 3}  # induce constraint failure
+    obs, reward, done, info = env.step(bad)
+
+    assert obs == [-1.0]
+    assert reward == expected_reward
+    assert done is True
+    assert info == {}
 
 
 def test_action_space(nemorun: NeMoRunTestDefinition, setup_env: tuple[TestRun, BaseRunner]):
@@ -298,3 +329,51 @@ def test_apply_params_set__preserves_installables_state(setup_env: tuple[TestRun
     upd_tdef = cast(NIXLBenchTestDefinition, new_tr.test)
 
     assert upd_tdef.docker_image.installed_path == tmp_path
+
+
+@pytest.mark.parametrize(
+    ("trajectory", "current_iteration", "action", "expected_step"),
+    [
+        ({}, 0, {"x": 1}, None),
+        ({0: [TrajectoryEntry(1, {"x": 1}, 1, [1])]}, 0, {"x": 1}, 1),
+        ({0: [TrajectoryEntry(1, {"x": 1.0}, 1, [1])]}, 0, {"x": 1}, None),
+        (
+            {
+                0: [
+                    TrajectoryEntry(1, {"x": 1.0}, 1, [1]),
+                    TrajectoryEntry(2, {"x": 1}, 1, [1]),
+                ]
+            },
+            0,
+            {"x": 1},
+            2,
+        ),
+        ({0: [TrajectoryEntry(1, {"x": 1}, 1, [1])]}, 1, {"x": 1}, None),
+        ({1: [TrajectoryEntry(3, {"x": 1}, 1, [1])]}, 1, {"x": 1}, 3),
+    ],
+)
+def test_get_cached_trajectory_result(
+    base_tr: TestRun,
+    tmp_path: Path,
+    trajectory: dict[int, list[TrajectoryEntry]],
+    current_iteration: int,
+    action: dict[str, object],
+    expected_step: int | None,
+) -> None:
+    runner = MagicMock()
+    runner.scenario_root = tmp_path / "scenario"
+    runner.system = MagicMock()
+    runner.test_scenario = MagicMock(test_runs=[])
+    runner.jobs = {}
+    runner.testrun_to_job_map = {}
+    runner.get_job_output_path.return_value = tmp_path / "scenario" / base_tr.name / "0" / "7"
+
+    env = CloudAIGymEnv(test_run=base_tr, runner=runner, rewards=RewardOverrides())
+    env.test_run.current_iteration = current_iteration
+    env.trajectory = trajectory
+
+    actual = env.get_cached_trajectory_result(action)
+    if actual is None:
+        assert expected_step is None
+    else:
+        assert actual.step == expected_step

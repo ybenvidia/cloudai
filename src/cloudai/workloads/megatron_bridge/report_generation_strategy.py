@@ -13,16 +13,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from __future__ import annotations
-
 import logging
-import re
 from pathlib import Path
 from statistics import mean, median, pstdev
 from typing import ClassVar
 
-from cloudai.core import METRIC_ERROR, ReportGenerationStrategy
+from cloudai.core import METRIC_ERROR, MetricValue, ReportGenerationStrategy
+
+from .megatron_bridge import extract_mbridge_metrics
 
 
 class MegatronBridgeReportGenerationStrategy(ReportGenerationStrategy):
@@ -41,34 +39,13 @@ class MegatronBridgeReportGenerationStrategy(ReportGenerationStrategy):
     def can_handle_directory(self) -> bool:
         return self.get_log_file() is not None
 
-    def _extract(self, log_path: Path) -> tuple[list[float], list[float]]:
-        step_times_s: list[float] = []
-        gpu_tflops: list[float] = []
-        step_line_re = re.compile(
-            r"Step Time\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*s.*?"
-            r"GPU utilization:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:MODEL_)?TFLOP/s/GPU",
-            re.IGNORECASE,
-        )
-        with log_path.open("r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                m = step_line_re.search(line)
-                if m:
-                    try:
-                        step_times_s.append(float(m.group(1)))
-                        gpu_tflops.append(float(m.group(2)))
-                    except (ValueError, TypeError):
-                        logging.debug("Failed to parse step metrics line: %s", line.rstrip("\n"))
-
-        if len(step_times_s) > 10:
-            step_times_s = step_times_s[-10:]
-            gpu_tflops = gpu_tflops[-10:]
-        return step_times_s, gpu_tflops
-
     def _get_extracted_data(self) -> tuple[Path | None, list[float], list[float]]:
         log_file = self.get_log_file()
         if not log_file:
             return None, [], []
-        step_times_s, gpu_tflops = self._extract(log_file)
+
+        log_data = log_file.read_text(encoding="utf-8", errors="ignore")
+        step_times_s, gpu_tflops = extract_mbridge_metrics(log_data)
         return log_file, step_times_s, gpu_tflops
 
     def generate_report(self) -> None:
@@ -124,7 +101,7 @@ class MegatronBridgeReportGenerationStrategy(ReportGenerationStrategy):
             f.write(f"  max: {tflops_stats['max']}\n")
             f.write(f"  std: {tflops_stats['std']}\n")
 
-    def get_metric(self, metric: str) -> float:
+    def get_metric(self, metric: str) -> MetricValue:
         if metric not in {"default", "step-time", "tflops-per-gpu"}:
             return METRIC_ERROR
         log_file, step_times_s, gpu_tflops = self._get_extracted_data()

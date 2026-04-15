@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@ from cloudai._core.exceptions import MissingTestError
 from cloudai.core import (
     CmdArgs,
     GitRepo,
+    NsysConfiguration,
     PredictorConfig,
     Registry,
     ReportGenerationStrategy,
@@ -53,6 +54,7 @@ from cloudai.workloads.megatron_bridge import MegatronBridgeReportGenerationStra
 from cloudai.workloads.megatron_run import (
     CheckpointTimingReportGenerationStrategy,
     MegatronRunCmdArgs,
+    MegatronRunReportGenerationStrategy,
     MegatronRunTestDefinition,
 )
 from cloudai.workloads.nccl_test import (
@@ -68,7 +70,10 @@ from cloudai.workloads.nemo_run import (
     NeMoRunTestDefinition,
 )
 from cloudai.workloads.nixl_bench import NIXLBenchReportGenerationStrategy, NIXLBenchTestDefinition
+from cloudai.workloads.nixl_ep import NixlEPReportGenerationStrategy, NixlEPTestDefinition
 from cloudai.workloads.nixl_perftest import NIXLKVBenchDummyReport, NixlPerftestTestDefinition
+from cloudai.workloads.osu_bench import OSUBenchReportGenerationStrategy, OSUBenchTestDefinition
+from cloudai.workloads.sglang import SGLangBenchReportGenerationStrategy, SglangTestDefinition
 from cloudai.workloads.triton_inference import TritonInferenceReportGenerationStrategy, TritonInferenceTestDefinition
 from cloudai.workloads.ucc_test import UCCTestDefinition, UCCTestReportGenerationStrategy
 
@@ -462,6 +467,153 @@ class TestInScenario:
         )
         assert model.tests[0].num_nodes == [1, 2]
 
+    def test_agent_metrics_preserved_from_test_definition(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "megatron": MegatronRunTestDefinition(
+                name="megatron",
+                description="desc",
+                test_template_name="MegatronRun",
+                cmd_args=MegatronRunCmdArgs(docker_image_url="docker://megatron", run_script=Path("run.sh")),
+                agent_metrics=["tflops-per-gpu"],  # Custom value in test definition
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "megatron"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+        assert tdef.agent_metrics == ["tflops-per-gpu"]
+
+    def test_agent_metrics_can_be_overridden_in_scenario(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "megatron": MegatronRunTestDefinition(
+                name="megatron",
+                description="desc",
+                test_template_name="MegatronRun",
+                cmd_args=MegatronRunCmdArgs(docker_image_url="docker://megatron", run_script=Path("run.sh")),
+                agent_metrics=["tflops-per-gpu"],  # Custom value in test definition
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "megatron"
+            agent_metrics = ["iteration-time"]
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+        assert tdef.agent_metrics == ["iteration-time"]
+
+    def test_agent_config_is_none_when_not_defined(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                agent="grid_search",
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+        assert tdef.agent_config is None
+
+    def test_agent_config_preserved_from_test_definition(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                agent="grid_search",
+                agent_config={
+                    "random_seed": 101,
+                    "start_action": "first",
+                },
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+        assert tdef.agent_config == {"random_seed": 101, "start_action": "first"}
+
+    def test_agent_config_is_merged_with_scenario_override(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                agent="grid_search",
+                agent_config={
+                    "random_seed": 101,
+                    "start_action": "first",
+                },
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+            agent = "grid_search"
+
+              [Tests.agent_config]
+              random_seed = 202
+              start_action = "random"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+        assert tdef.agent_config == {
+            "random_seed": 202,
+            "start_action": "random",
+        }
+
 
 class TestReporters:
     def test_default(self):
@@ -472,7 +624,7 @@ class TestReporters:
         assert len(reporters) == 0
 
     def test_default_reporters_size(self):
-        assert len(Registry().reports_map) == 16
+        assert len(Registry().reports_map) == 20
 
     @pytest.mark.parametrize(
         "tdef,expected_reporters",
@@ -481,7 +633,10 @@ class TestReporters:
             (DeepEPTestDefinition, {DeepEPReportGenerationStrategy}),
             (GPTTestDefinition, {JaxToolboxReportGenerationStrategy}),
             (GrokTestDefinition, {JaxToolboxReportGenerationStrategy}),
-            (MegatronRunTestDefinition, {CheckpointTimingReportGenerationStrategy}),
+            (
+                MegatronRunTestDefinition,
+                {CheckpointTimingReportGenerationStrategy, MegatronRunReportGenerationStrategy},
+            ),
             (MegatronBridgeTestDefinition, {MegatronBridgeReportGenerationStrategy}),
             (NCCLTestDefinition, {NcclTestPerformanceReportGenerationStrategy}),
             (NeMoLauncherTestDefinition, {NeMoLauncherReportGenerationStrategy}),
@@ -490,6 +645,9 @@ class TestReporters:
             (UCCTestDefinition, {UCCTestReportGenerationStrategy}),
             (TritonInferenceTestDefinition, {TritonInferenceReportGenerationStrategy}),
             (NIXLBenchTestDefinition, {NIXLBenchReportGenerationStrategy}),
+            (NixlEPTestDefinition, {NixlEPReportGenerationStrategy}),
+            (OSUBenchTestDefinition, {OSUBenchReportGenerationStrategy}),
+            (SglangTestDefinition, {SGLangBenchReportGenerationStrategy}),
             (AIDynamoTestDefinition, {AIDynamoReportGenerationStrategy}),
             (NixlPerftestTestDefinition, {NIXLKVBenchDummyReport}),
             (AiconfiguratorTestDefinition, {AiconfiguratorReportGenerationStrategy}),
@@ -515,3 +673,154 @@ class TestReporters:
         assert len(reporters) == 2
         assert NcclTestPerformanceReportGenerationStrategy in reporters
         assert NcclTestPredictionReportGenerationStrategy in reporters
+
+
+class TestNsysMerging:
+    def test_nsys_partial_override_preserves_base_config(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                nsys=NsysConfiguration(
+                    enable=True,
+                    nsys_binary="/custom/nsys",
+                    output="/base/output",
+                    trace="cuda,nvtx",
+                    sample="cpu",
+                ),
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+
+              [Tests.nsys]
+              output = "/scenario/output"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+
+        assert tdef.nsys is not None
+        assert tdef.nsys.output == "/scenario/output"
+        assert tdef.nsys.nsys_binary == "/custom/nsys"
+        assert tdef.nsys.trace == "cuda,nvtx"
+        assert tdef.nsys.sample == "cpu"
+        assert tdef.nsys.enable is True
+
+    def test_nsys_multiple_fields_override(self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                nsys=NsysConfiguration(
+                    enable=True,
+                    nsys_binary="/base/nsys",
+                    output="/base/output",
+                    trace="cuda",
+                    force_overwrite=False,
+                ),
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+
+              [Tests.nsys]
+              output = "/new/output"
+              force_overwrite = true
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+
+        assert tdef.nsys is not None
+        assert tdef.nsys.output == "/new/output"
+        assert tdef.nsys.force_overwrite is True
+        assert tdef.nsys.nsys_binary == "/base/nsys"
+        assert tdef.nsys.trace == "cuda"
+        assert tdef.nsys.enable is True
+
+    def test_nsys_scenario_adds_to_base_without_nsys(
+        self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem
+    ):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                # No nsys in base config
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+
+              [Tests.nsys]
+              output = "/scenario/output"
+              trace = "cuda,nvtx"
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+
+        assert tdef.nsys is not None
+        assert tdef.nsys.output == "/scenario/output"
+        assert tdef.nsys.trace == "cuda,nvtx"
+        assert tdef.nsys.enable is True
+        assert tdef.nsys.nsys_binary == "nsys"
+
+    def test_nsys_disable_override(self, test_scenario_parser: TestScenarioParser, slurm_system: SlurmSystem):
+        test_scenario_parser.test_mapping = {
+            "nccl": NCCLTestDefinition(
+                name="nccl",
+                description="desc",
+                test_template_name="NcclTest",
+                cmd_args=NCCLCmdArgs(docker_image_url="fake://url/nccl"),
+                nsys=NsysConfiguration(
+                    enable=True,
+                    output="/base/output",
+                ),
+            )
+        }
+        model = TestScenarioModel.model_validate(
+            toml.loads(
+                """
+            name = "test"
+
+            [[Tests]]
+            id = "1"
+            test_name = "nccl"
+
+              [Tests.nsys]
+              enable = false
+            """
+            )
+        )
+        tdef = test_scenario_parser._prepare_tdef(model.tests[0])
+
+        assert tdef.nsys is not None
+        assert tdef.nsys.enable is False
+        assert tdef.nsys.output == "/base/output"

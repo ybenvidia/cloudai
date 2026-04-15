@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -102,6 +103,14 @@ class SlurmInstaller(BaseInstaller):
             shutil.copyfile(item.src, item.installed_path, follow_symlinks=False)
             return InstallStatusResult(True)
         elif isinstance(item, HFModel):
+            if not self._is_hf_home_accessible():
+                item.installed_path = self.system.hf_home_path
+                return InstallStatusResult(
+                    True,
+                    f"HF home path '{self.system.hf_home_path}' is not accessible locally, "
+                    f"skipping download of {item.model_name}. "
+                    "Ensure the model is available on compute nodes.",
+                )
             return self.hf_model_manager.download_model(item)
 
         return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
@@ -134,11 +143,7 @@ class SlurmInstaller(BaseInstaller):
                 item.installed_path = res.docker_image_path
             return InstallStatusResult(res.success, res.message)
         elif isinstance(item, GitRepo):
-            repo_path = self.system.install_path / item.repo_name
-            if repo_path.exists():
-                item.installed_path = repo_path
-                return InstallStatusResult(True)
-            return InstallStatusResult(False, f"Git repository {item.url} not cloned")
+            return self._is_git_repo_installed(item)
         elif isinstance(item, PythonExecutable):
             return self._is_python_executable_installed(item)
         elif isinstance(item, File):
@@ -149,13 +154,16 @@ class SlurmInstaller(BaseInstaller):
                 return InstallStatusResult(True)
             return InstallStatusResult(False, f"File {item.installed_path} does not exist")
         elif isinstance(item, HFModel):
+            if not self._is_hf_home_accessible():
+                item.installed_path = self.system.hf_home_path
+                return InstallStatusResult(True)
             return self.hf_model_manager.is_model_downloaded(item)
 
         return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
         if isinstance(item, DockerImage):
-            if self.system.cache_docker_images_locally:
+            if self.system.cache_docker_images_locally and not isinstance(item.installed_path, Path):
                 item.installed_path = self.system.install_path / item.cache_filename
             return InstallStatusResult(True)
         elif isinstance(item, GitRepo):
@@ -174,6 +182,15 @@ class SlurmInstaller(BaseInstaller):
 
         return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
 
+    def _is_hf_home_accessible(self) -> bool:
+        """Check if hf_home_path is accessible locally (parent directory exists and is writable)."""
+        try:
+            parent = self.system.hf_home_path.resolve().parent
+            return parent.exists() and parent.is_dir() and os.access(parent, os.W_OK | os.X_OK)
+
+        except (OSError, RuntimeError):
+            return False
+
     def _install_docker_image(self, item: DockerImage) -> DockerImageCacheResult:
         res = self.docker_image_cache_manager.ensure_docker_image(item.url, item.cache_filename)
         if res.success and res.docker_image_path:
@@ -189,20 +206,43 @@ class SlurmInstaller(BaseInstaller):
     def _install_one_git_repo(self, item: GitRepo) -> InstallStatusResult:
         repo_path = self.system.install_path / item.repo_name
         if repo_path.exists():
+            verify_res = self._verify_commit(item.commit, repo_path)
+            if not verify_res.success:
+                return verify_res
+            submodules_res, submodules_msg = item.ensure_submodules_state(repo_path)
+            if not submodules_res:
+                return InstallStatusResult(False, submodules_msg)
             item.installed_path = repo_path
             msg = f"Git repository already exists at {repo_path}."
             logging.debug(msg)
             return InstallStatusResult(True, msg)
 
+        res = self._clone_and_setup_repo(item, repo_path)
+        if not res.success:
+            return res
+
+        item.installed_path = repo_path
+        return InstallStatusResult(True)
+
+    def _clone_and_setup_repo(self, item: GitRepo, repo_path: Path) -> InstallStatusResult:
         res = self._clone_repository(item.url, repo_path)
         if not res.success:
             return res
 
         res = self._checkout_commit(item.commit, repo_path)
         if not res.success:
+            logging.error(f"Checkout failed, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
             return res
 
-        item.installed_path = repo_path
+        submodules_res, submodules_msg = item.ensure_submodules_state(repo_path)
+        if not submodules_res:
+            logging.error(f"Submodule setup failed with `{submodules_msg}`, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
+            return InstallStatusResult(False, submodules_msg)
+
         return InstallStatusResult(True)
 
     def _install_python_executable(self, item: PythonExecutable) -> InstallStatusResult:
@@ -264,8 +304,52 @@ class SlurmInstaller(BaseInstaller):
         checkout_cmd = ["git", "checkout", commit_hash]
         result = subprocess.run(checkout_cmd, cwd=str(path), capture_output=True, text=True)
         if result.returncode != 0:
-            return InstallStatusResult(False, f"Failed to checkout commit: {result.stderr}")
+            return InstallStatusResult(False, f"Failed to checkout commit {commit_hash}: {result.stderr}")
         return InstallStatusResult(True)
+
+    def _verify_commit(self, ref: str, path: Path) -> InstallStatusResult:
+        try:
+            result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(path), capture_output=True, text=True)
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {result.stderr}")
+        actual_commit = result.stdout.strip()
+
+        try:
+            commit_resolved = subprocess.run(
+                ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if commit_resolved.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {commit_resolved.stderr}")
+        expected_commit = commit_resolved.stdout.strip()
+
+        try:
+            branch_resolved = subprocess.run(
+                ["git", "symbolic-ref", "--short", "-q", "HEAD"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        actual_branch = branch_resolved.stdout.strip() if branch_resolved.returncode == 0 else ""
+
+        if actual_commit == expected_commit or ref == actual_branch:
+            return InstallStatusResult(True)
+
+        return InstallStatusResult(
+            success=False,
+            message=(
+                f"Failed to verify commit in {path}: {actual_commit=}, {actual_branch=}, expected was {ref} or "
+                f"{expected_commit=}"
+            ),
+        )
 
     def _create_venv(self, item: PythonExecutable) -> InstallStatusResult:
         venv_path = self.system.install_path / item.venv_name
@@ -347,6 +431,21 @@ class SlurmInstaller(BaseInstaller):
         rmtree(venv_path)
         item.venv_path = None
 
+        return InstallStatusResult(True)
+
+    def _is_git_repo_installed(self, item: GitRepo) -> InstallStatusResult:
+        repo_path = self.system.install_path / item.repo_name
+        if not repo_path.exists():
+            return InstallStatusResult(False, f"Git repository {item.url} not cloned")
+        verify_res = self._verify_commit(item.commit, repo_path)
+        if not verify_res.success:
+            return verify_res
+
+        verify_submodules, msg_submodules = item.check_submodules_state(repo_path)
+        if not verify_submodules:
+            return InstallStatusResult(False, msg_submodules)
+
+        item.installed_path = repo_path
         return InstallStatusResult(True)
 
     def _is_python_executable_installed(self, item: PythonExecutable) -> InstallStatusResult:

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pathlib import Path
 from typing import cast
 
 from cloudai.workloads.common.nixl import NIXLCmdGenBase
@@ -25,19 +24,13 @@ from .nixl_kvbench import NIXLKVBenchTestDefinition
 class NIXLKVBenchSlurmCommandGenStrategy(NIXLCmdGenBase):
     """Command generation strategy for NIXLKVBench tests."""
 
-    def _container_mounts(self) -> list[str]:
-        mounts = []
-        if filepath := self.tdef.cmd_args_dict.get("filepath"):
-            local_dir = self.test_run.output_path / Path(f"{filepath}").name
-            local_dir.mkdir(exist_ok=True)
-            mounts.append(f"{local_dir.absolute()}:/{filepath}")
-        return mounts
-
     @property
     def tdef(self) -> NIXLKVBenchTestDefinition:
         return cast(NIXLKVBenchTestDefinition, self.test_run.test)
 
     def image_path(self) -> str | None:
+        if self._current_image_url is not None:
+            return self._current_image_url
         return str(self.tdef.docker_image.installed_path)
 
     def _gen_srun_command(self) -> str:

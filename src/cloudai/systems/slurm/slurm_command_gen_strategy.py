@@ -38,6 +38,10 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             properties and methods.
     """
 
+    CONTAINER_MOUNT_INSTALL = "/cloudai_install"
+    CONTAINER_MOUNT_OUTPUT = "/cloudai_run_results"
+    CONTAINER_MOUNT_HF_HOME = "/cloudai_install/huggingface"
+
     def __init__(self, system: System, test_run: TestRun) -> None:
         """
         Initialize a new SlurmCommandGenStrategy instance.
@@ -79,8 +83,8 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             repo_mounts.append(f"{path}:{repo.container_mount}")
 
         mounts = [
-            f"{self.test_run.output_path.absolute()}:/cloudai_run_results",
-            f"{self.system.install_path.absolute()}:/cloudai_install",
+            f"{self.test_run.output_path.absolute()}:{self.CONTAINER_MOUNT_OUTPUT}",
+            f"{self.system.install_path.absolute()}:{self.CONTAINER_MOUNT_INSTALL}",
             f"{self.test_run.output_path.absolute()}",
             *tdef.extra_container_mounts,
             *repo_mounts,
@@ -420,6 +424,9 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
 
         content.append(f"#SBATCH -N {num_nodes}")
 
+        if self.test_run.exclude_nodes:
+            content.append(f"#SBATCH --exclude={','.join(self.test_run.exclude_nodes)}")
+
         return None
 
     def _format_env_vars(self, env_vars: Dict[str, Any]) -> str:
@@ -461,6 +468,7 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
                 str(self.test_run.step),
                 str(self.test_run.nnodes),
                 ",".join(self.test_run.nodes),
+                ",".join(self.test_run.exclude_nodes),
             ]
         )
 
@@ -468,5 +476,9 @@ class SlurmCommandGenStrategy(CommandGenStrategy):
             logging.debug(f"Using cached node allocation for {cache_key}: {self._node_spec_cache[cache_key]}")
             return self._node_spec_cache[cache_key]
 
-        self._node_spec_cache[cache_key] = self.system.get_nodes_by_spec(self.test_run.nnodes, self.test_run.nodes)
+        num_nodes, node_list = self.system.get_nodes_by_spec(
+            self.test_run.nnodes, self.test_run.nodes, exclude_nodes=self.test_run.exclude_nodes or None
+        )
+
+        self._node_spec_cache[cache_key] = (num_nodes, node_list)
         return self._node_spec_cache[cache_key]

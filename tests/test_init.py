@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 
 from cloudai.core import Registry
-from cloudai.reporter import PerTestReporter, StatusReporter, TarballReporter
+from cloudai.reporter import DSEReporter, PerTestReporter, StatusReporter, TarballReporter
 from cloudai.systems.kubernetes import KubernetesSystem
 from cloudai.systems.lsf import LSFInstaller, LSFSystem
 from cloudai.systems.runai import RunAIInstaller, RunAISystem
@@ -76,9 +76,15 @@ from cloudai.workloads.nixl_bench import (
     NIXLBenchSlurmCommandGenStrategy,
     NIXLBenchTestDefinition,
 )
+from cloudai.workloads.nixl_ep import NixlEPSlurmCommandGenStrategy, NixlEPTestDefinition
 from cloudai.workloads.nixl_kvbench import NIXLKVBenchSlurmCommandGenStrategy, NIXLKVBenchTestDefinition
 from cloudai.workloads.nixl_perftest import NixlPerftestSlurmCommandGenStrategy, NixlPerftestTestDefinition
-from cloudai.workloads.osu_bench import OSUBenchSlurmCommandGenStrategy, OSUBenchTestDefinition
+from cloudai.workloads.osu_bench import (
+    OSUBenchComparisonReport,
+    OSUBenchSlurmCommandGenStrategy,
+    OSUBenchTestDefinition,
+)
+from cloudai.workloads.sglang import SglangSlurmCommandGenStrategy, SglangTestDefinition
 from cloudai.workloads.sleep import (
     SleepGradingStrategy,
     SleepKubernetesJsonGenStrategy,
@@ -97,6 +103,7 @@ from cloudai.workloads.ucc_test import (
     UCCTestGradingStrategy,
     UCCTestSlurmCommandGenStrategy,
 )
+from cloudai.workloads.vllm import VllmSlurmCommandGenStrategy, VllmTestDefinition
 
 
 def test_systems():
@@ -141,9 +148,12 @@ CMD_GEN_STRATEGIES = {
     (SlurmSystem, NIXLBenchTestDefinition): NIXLBenchSlurmCommandGenStrategy,
     (SlurmSystem, AIDynamoTestDefinition): AIDynamoSlurmCommandGenStrategy,
     (SlurmSystem, BashCmdTestDefinition): BashCmdCommandGenStrategy,
+    (SlurmSystem, NixlEPTestDefinition): NixlEPSlurmCommandGenStrategy,
     (SlurmSystem, NixlPerftestTestDefinition): NixlPerftestSlurmCommandGenStrategy,
     (SlurmSystem, NIXLKVBenchTestDefinition): NIXLKVBenchSlurmCommandGenStrategy,
     (SlurmSystem, OSUBenchTestDefinition): OSUBenchSlurmCommandGenStrategy,
+    (SlurmSystem, SglangTestDefinition): SglangSlurmCommandGenStrategy,
+    (SlurmSystem, VllmTestDefinition): VllmSlurmCommandGenStrategy,
 }
 JSON_GEN_STRATEGIES = {
     (KubernetesSystem, NCCLTestDefinition): NcclTestKubernetesJsonGenStrategy,
@@ -217,7 +227,7 @@ def test_installers():
 
 def test_definitions():
     test_defs = Registry().test_definitions_map
-    assert len(test_defs) == 22
+    assert len(test_defs) == 25
     for tdef in [
         ("UCCTest", UCCTestDefinition),
         ("DDLBTest", DDLBTestDefinition),
@@ -237,28 +247,49 @@ def test_definitions():
         ("NIXLBench", NIXLBenchTestDefinition),
         ("AIDynamo", AIDynamoTestDefinition),
         ("BashCmd", BashCmdTestDefinition),
+        ("NixlEP", NixlEPTestDefinition),
         ("NixlPerftest", NixlPerftestTestDefinition),
         ("NIXLKVBench", NIXLKVBenchTestDefinition),
         ("Aiconfigurator", AiconfiguratorTestDefinition),
         ("OSUBench", OSUBenchTestDefinition),
+        ("sglang", SglangTestDefinition),
+        ("vllm", VllmTestDefinition),
     ]:
         assert test_defs[tdef[0]] == tdef[1]
 
 
 def test_scenario_reports():
     scenario_reports = Registry().scenario_reports
-    assert list(scenario_reports.keys()) == ["per_test", "status", "tarball", "nixl_bench_summary", "nccl_comparison"]
+    assert list(scenario_reports.keys()) == [
+        "per_test",
+        "status",
+        "dse",
+        "tarball",
+        "nixl_bench_summary",
+        "nccl_comparison",
+        "osu_bench_comparison",
+    ]
     assert list(scenario_reports.values()) == [
         PerTestReporter,
         StatusReporter,
+        DSEReporter,
         TarballReporter,
         NIXLBenchComparisonReport,
         NcclComparisonReport,
+        OSUBenchComparisonReport,
     ]
 
 
 def test_report_configs():
     configs = Registry().report_configs
-    assert list(configs.keys()) == ["per_test", "status", "tarball", "nixl_bench_summary", "nccl_comparison"]
+    assert list(configs.keys()) == [
+        "per_test",
+        "status",
+        "dse",
+        "tarball",
+        "nixl_bench_summary",
+        "nccl_comparison",
+        "osu_bench_comparison",
+    ]
     for name, rep_config in configs.items():
         assert rep_config.enable is True, f"Report {name} is not enabled by default"

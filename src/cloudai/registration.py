@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,7 +46,7 @@ def register_all():
     )
     from cloudai.core import Registry
     from cloudai.models.scenario import ReportConfig
-    from cloudai.reporter import PerTestReporter, StatusReporter, TarballReporter
+    from cloudai.reporter import DSEReporter, PerTestReporter, StatusReporter, TarballReporter
 
     # Import systems
     from cloudai.systems.kubernetes import KubernetesInstaller, KubernetesRunner, KubernetesSystem
@@ -98,6 +98,7 @@ def register_all():
     )
     from cloudai.workloads.megatron_run import (
         CheckpointTimingReportGenerationStrategy,
+        MegatronRunReportGenerationStrategy,
         MegatronRunSlurmCommandGenStrategy,
         MegatronRunTestDefinition,
     )
@@ -129,6 +130,11 @@ def register_all():
         NIXLBenchSlurmCommandGenStrategy,
         NIXLBenchTestDefinition,
     )
+    from cloudai.workloads.nixl_ep import (
+        NixlEPReportGenerationStrategy,
+        NixlEPSlurmCommandGenStrategy,
+        NixlEPTestDefinition,
+    )
     from cloudai.workloads.nixl_kvbench import NIXLKVBenchSlurmCommandGenStrategy, NIXLKVBenchTestDefinition
     from cloudai.workloads.nixl_perftest import (
         NIXLKVBenchDummyReport,
@@ -136,8 +142,15 @@ def register_all():
         NixlPerftestTestDefinition,
     )
     from cloudai.workloads.osu_bench import (
+        OSUBenchComparisonReport,
+        OSUBenchReportGenerationStrategy,
         OSUBenchSlurmCommandGenStrategy,
         OSUBenchTestDefinition,
+    )
+    from cloudai.workloads.sglang import (
+        SGLangBenchReportGenerationStrategy,
+        SglangSlurmCommandGenStrategy,
+        SglangTestDefinition,
     )
     from cloudai.workloads.sleep import (
         SleepGradingStrategy,
@@ -158,6 +171,11 @@ def register_all():
         UCCTestGradingStrategy,
         UCCTestReportGenerationStrategy,
         UCCTestSlurmCommandGenStrategy,
+    )
+    from cloudai.workloads.vllm import (
+        VLLMBenchReportGenerationStrategy,
+        VllmSlurmCommandGenStrategy,
+        VllmTestDefinition,
     )
 
     Registry().add_runner("slurm", SlurmRunner)
@@ -197,6 +215,7 @@ def register_all():
     Registry().add_command_gen_strategy(SlurmSystem, NeMoLauncherTestDefinition, NeMoLauncherSlurmCommandGenStrategy)
     Registry().add_command_gen_strategy(SlurmSystem, NeMoRunTestDefinition, NeMoRunSlurmCommandGenStrategy)
     Registry().add_command_gen_strategy(SlurmSystem, NIXLBenchTestDefinition, NIXLBenchSlurmCommandGenStrategy)
+    Registry().add_command_gen_strategy(SlurmSystem, NixlEPTestDefinition, NixlEPSlurmCommandGenStrategy)
 
     Registry().add_command_gen_strategy(SlurmSystem, GPTTestDefinition, JaxToolboxSlurmCommandGenStrategy)
     Registry().add_command_gen_strategy(SlurmSystem, GrokTestDefinition, JaxToolboxSlurmCommandGenStrategy)
@@ -216,6 +235,8 @@ def register_all():
     Registry().add_command_gen_strategy(SlurmSystem, BashCmdTestDefinition, BashCmdCommandGenStrategy)
     Registry().add_command_gen_strategy(SlurmSystem, NIXLKVBenchTestDefinition, NIXLKVBenchSlurmCommandGenStrategy)
     Registry().add_command_gen_strategy(SlurmSystem, OSUBenchTestDefinition, OSUBenchSlurmCommandGenStrategy)
+    Registry().add_command_gen_strategy(SlurmSystem, SglangTestDefinition, SglangSlurmCommandGenStrategy)
+    Registry().add_command_gen_strategy(SlurmSystem, VllmTestDefinition, VllmSlurmCommandGenStrategy)
 
     Registry().add_installer("slurm", SlurmInstaller)
     Registry().add_installer("standalone", StandaloneInstaller)
@@ -245,12 +266,15 @@ def register_all():
     Registry().add_test_definition("MegatronBridge", MegatronBridgeTestDefinition)
     Registry().add_test_definition("TritonInference", TritonInferenceTestDefinition)
     Registry().add_test_definition("NIXLBench", NIXLBenchTestDefinition)
+    Registry().add_test_definition("NixlEP", NixlEPTestDefinition)
     Registry().add_test_definition("AIDynamo", AIDynamoTestDefinition)
     Registry().add_test_definition("BashCmd", BashCmdTestDefinition)
     Registry().add_test_definition("NixlPerftest", NixlPerftestTestDefinition)
     Registry().add_test_definition("NIXLKVBench", NIXLKVBenchTestDefinition)
     Registry().add_test_definition("Aiconfigurator", AiconfiguratorTestDefinition)
     Registry().add_test_definition("OSUBench", OSUBenchTestDefinition)
+    Registry().add_test_definition("sglang", SglangTestDefinition)
+    Registry().add_test_definition("vllm", VllmTestDefinition)
 
     Registry().add_agent("grid_search", GridSearchAgent)
 
@@ -259,6 +283,7 @@ def register_all():
     Registry().add_report(GPTTestDefinition, JaxToolboxReportGenerationStrategy)
     Registry().add_report(GrokTestDefinition, JaxToolboxReportGenerationStrategy)
     Registry().add_report(MegatronRunTestDefinition, CheckpointTimingReportGenerationStrategy)
+    Registry().add_report(MegatronRunTestDefinition, MegatronRunReportGenerationStrategy)
     Registry().add_report(MegatronBridgeTestDefinition, MegatronBridgeReportGenerationStrategy)
     Registry().add_report(NCCLTestDefinition, NcclTestPerformanceReportGenerationStrategy)
     Registry().add_report(NeMoLauncherTestDefinition, NeMoLauncherReportGenerationStrategy)
@@ -268,12 +293,17 @@ def register_all():
     Registry().add_report(UCCTestDefinition, UCCTestReportGenerationStrategy)
     Registry().add_report(TritonInferenceTestDefinition, TritonInferenceReportGenerationStrategy)
     Registry().add_report(NIXLBenchTestDefinition, NIXLBenchReportGenerationStrategy)
+    Registry().add_report(NixlEPTestDefinition, NixlEPReportGenerationStrategy)
     Registry().add_report(AIDynamoTestDefinition, AIDynamoReportGenerationStrategy)
     Registry().add_report(AiconfiguratorTestDefinition, AiconfiguratorReportGenerationStrategy)
     Registry().add_report(NixlPerftestTestDefinition, NIXLKVBenchDummyReport)
+    Registry().add_report(OSUBenchTestDefinition, OSUBenchReportGenerationStrategy)
+    Registry().add_report(SglangTestDefinition, SGLangBenchReportGenerationStrategy)
+    Registry().add_report(VllmTestDefinition, VLLMBenchReportGenerationStrategy)
 
     Registry().add_scenario_report("per_test", PerTestReporter, ReportConfig(enable=True))
     Registry().add_scenario_report("status", StatusReporter, ReportConfig(enable=True))
+    Registry().add_scenario_report("dse", DSEReporter, ReportConfig(enable=True))
     Registry().add_scenario_report("tarball", TarballReporter, ReportConfig(enable=True))
     Registry().add_scenario_report(
         "nixl_bench_summary",
@@ -282,6 +312,11 @@ def register_all():
     )
     Registry().add_scenario_report(
         "nccl_comparison", NcclComparisonReport, ComparisonReportConfig(enable=True, group_by=["subtest_name"])
+    )
+    Registry().add_scenario_report(
+        "osu_bench_comparison",
+        OSUBenchComparisonReport,
+        ComparisonReportConfig(enable=True, group_by=["benchmark"]),
     )
 
     Registry().add_reward_function("inverse", inverse_reward)

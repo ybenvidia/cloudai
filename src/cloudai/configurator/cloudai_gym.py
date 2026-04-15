@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,16 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import copy
 import csv
+import dataclasses
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from cloudai.core import METRIC_ERROR, BaseRunner, Registry, TestRun
 from cloudai.util.lazy_imports import lazy
 
+from .base_agent import RewardOverrides
 from .base_gym import BaseGym
+
+
+@dataclasses.dataclass(frozen=True)
+class TrajectoryEntry:
+    """Represents a trajectory entry."""
+
+    step: int
+    action: dict[str, Any]
+    reward: float
+    observation: list
 
 
 class CloudAIGymEnv(BaseGym):
@@ -33,23 +45,31 @@ class CloudAIGymEnv(BaseGym):
     Uses the TestRun object and actual runner methods to execute jobs.
     """
 
-    def __init__(self, test_run: TestRun, runner: BaseRunner):
+    def __init__(self, test_run: TestRun, runner: BaseRunner, rewards: RewardOverrides):
         """
         Initialize the Gym environment using the TestRun object.
 
         Args:
             test_run (TestRun): A test run object that encapsulates cmd_args, extra_cmd_args, etc.
             runner (BaseRunner): The runner object to execute jobs.
+            rewards: Reward / observation overrides from agent config.
         """
         self.test_run = test_run
         self.original_test_run = copy.deepcopy(test_run)  # Preserve clean state for DSE
         self.runner = runner
+        self.rewards = rewards
         self.max_steps = test_run.test.agent_steps
         self.reward_function = Registry().get_reward_function(test_run.test.agent_reward_function)
+        self.trajectory: dict[int, list[TrajectoryEntry]] = {}
         super().__init__()
 
-    def define_action_space(self) -> Dict[str, Any]:
+    def define_action_space(self) -> Dict[str, list[Any]]:
         return self.test_run.param_space
+
+    @property
+    def first_sweep(self) -> dict[str, Any]:
+        """Builds a sweep using first elements of each explorable parameter."""
+        return {k: v[0] for k, v in self.define_action_space().items()}
 
     def define_observation_space(self) -> list:
         """
@@ -100,9 +120,17 @@ class CloudAIGymEnv(BaseGym):
         """
         self.test_run = self.test_run.apply_params_set(action)
 
-        if not self.test_run.test.constraint_check(self.test_run):
+        cached_result = self.get_cached_trajectory_result(action)
+        if cached_result is not None:
+            logging.info(
+                "Retrieved cached result from trajectory with reward %s. Skipping step.",
+                cached_result.reward,
+            )
+            return cached_result.observation, cached_result.reward, False, {}
+
+        if not self.test_run.test.constraint_check(self.test_run, self.runner.system):
             logging.info("Constraint check failed. Skipping step.")
-            return [-1.0], -1.0, True, {}
+            return [-1.0], self.rewards.constraint_failure, True, {}
 
         new_tr = copy.deepcopy(self.test_run)
         new_tr.output_path = self.runner.get_job_output_path(new_tr)
@@ -113,7 +141,7 @@ class CloudAIGymEnv(BaseGym):
         self.runner.testrun_to_job_map.clear()
 
         try:
-            asyncio.run(self.runner.run())
+            self.runner.run()
         except Exception as e:
             logging.error(f"Error running step {self.test_run.step}: {e}")
 
@@ -127,7 +155,14 @@ class CloudAIGymEnv(BaseGym):
         observation = self.get_observation(action)
         reward = self.compute_reward(observation)
 
-        self.write_trajectory(self.test_run.step, action, reward, observation)
+        self.write_trajectory(
+            TrajectoryEntry(
+                step=self.test_run.step,
+                action=action,
+                reward=reward,
+                observation=observation,
+            )
+        )
 
         return observation, reward, False, {}
 
@@ -179,30 +214,62 @@ class CloudAIGymEnv(BaseGym):
         observation = []
         for metric in all_metrics:
             v = self.test_run.get_metric_value(self.runner.system, metric)
-            if v == METRIC_ERROR:
-                v = -1.0
+            if v is METRIC_ERROR:
+                v = self.rewards.metric_failure
             observation.append(v)
         return observation
 
-    def write_trajectory(self, step: int, action: Any, reward: float, observation: list):
-        """
-        Write the trajectory to a CSV file.
+    def write_trajectory(self, entry: TrajectoryEntry):
+        """Append the trajectory to the CSV file and to the local attribute."""
+        self.current_trajectory.append(entry)
 
-        Args:
-            step (int): The current step number.
-            action (Any): The action taken by the agent.
-            reward (float): The reward received for the action.
-            observation (list): The observation after taking the action.
-        """
-        trajectory_file_path = (
-            self.runner.scenario_root / self.test_run.name / f"{self.test_run.current_iteration}" / "trajectory.csv"
-        )
+        file_exists = self.trajectory_file_path.exists()
+        logging.debug(f"Writing trajectory into {self.trajectory_file_path} (exists: {file_exists})")
+        self.trajectory_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_exists = trajectory_file_path.exists()
-        logging.debug(f"Writing trajectory into {trajectory_file_path} (exists: {file_exists})")
-
-        with open(trajectory_file_path, mode="a", newline="") as file:
+        with open(self.trajectory_file_path, mode="a", newline="") as file:
             writer = csv.writer(file)
             if not file_exists:
                 writer.writerow(["step", "action", "reward", "observation"])
-            writer.writerow([step, action, reward, observation])
+            writer.writerow([entry.step, entry.action, entry.reward, entry.observation])
+
+    @property
+    def trajectory_file_path(self) -> Path:
+        return self.runner.scenario_root / self.test_run.name / f"{self.test_run.current_iteration}" / "trajectory.csv"
+
+    @property
+    def current_trajectory(self) -> list[TrajectoryEntry]:
+        return self.trajectory.setdefault(self.test_run.current_iteration, [])
+
+    def get_cached_trajectory_result(self, action: Any) -> TrajectoryEntry | None:
+        for entry in self.current_trajectory:
+            if self._values_match_exact(entry.action, action):
+                return entry
+
+        return None
+
+    @classmethod
+    def _values_match_exact(cls, left: Any, right: Any) -> bool:
+        if type(left) is not type(right):
+            return False
+
+        elif isinstance(left, dict):
+            left_keys = set(left.keys())
+            right_keys = set(right.keys())
+            if left_keys != right_keys:
+                return False
+
+            return all(cls._values_match_exact(left[key], right[key]) for key in left_keys)
+
+        elif isinstance(left, (list, tuple)):
+            if len(left) != len(right):
+                return False
+
+            for left_item, right_item in zip(left, right, strict=True):
+                if not cls._values_match_exact(left_item, right_item):
+                    return False
+
+            return True
+
+        else:
+            return left == right

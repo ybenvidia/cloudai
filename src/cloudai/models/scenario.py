@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer, field_validator, model_validator
+from typing_extensions import Self
 
 from cloudai.core import CmdArgs, GitRepo, NsysConfiguration, Registry, Reporter, TestRun
 from cloudai.models.workload import TestDefinition
@@ -72,6 +73,13 @@ class TestRunModel(BaseModel):
     test_name: Optional[str] = None
     num_nodes: int | list[int] | None = None
     nodes: list[str] = Field(default_factory=list)
+    exclude_nodes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Hostnames to exclude from the resolved node list. "
+            "Supports Slurm range syntax, e.g. ['node-048', 'node-[101-104]']."
+        ),
+    )
     weight: int = 0
     iterations: int = 1
     sol: Optional[float] = None
@@ -93,6 +101,7 @@ class TestRunModel(BaseModel):
     agent_steps: Optional[int] = None
     agent_metrics: list[str] = Field(default=["default"])
     agent_reward_function: Optional[str] = None
+    agent_config: Optional[dict[str, Any]] = Field(default=None, description="Agent configuration.")
 
     def tdef_model_dump(self, by_alias: bool) -> dict:
         """Return a dictionary with non-None values that correspond to the test definition fields."""
@@ -102,13 +111,14 @@ class TestRunModel(BaseModel):
             "test_template_name": self.test_template_name,
             "agent": self.agent,
             "agent_steps": self.agent_steps,
-            "agent_metrics": self.agent_metrics,
+            "agent_metrics": self.agent_metrics if "agent_metrics" in self.model_fields_set else None,
             "agent_reward_function": self.agent_reward_function,
+            "agent_config": self.agent_config,
             "extra_container_mounts": self.extra_container_mounts,
             "extra_env_vars": self.extra_env_vars if self.extra_env_vars else None,
             "cmd_args": self.cmd_args.model_dump(by_alias=by_alias) if self.cmd_args else None,
             "git_repos": [repo.model_dump() for repo in self.git_repos] if self.git_repos else None,
-            "nsys": self.nsys.model_dump() if self.nsys else None,
+            "nsys": self.nsys.model_dump(exclude_unset=True) if self.nsys else None,
         }
         return {k: v for k, v in data.items() if v is not None}
 
@@ -135,6 +145,24 @@ class TestRunModel(BaseModel):
             if self.test_template_name:
                 raise ValueError("'test_template_name' must not be set if 'test_name' is set.")
 
+        return self
+
+    @field_validator("agent", mode="after")
+    @staticmethod
+    def validate_agent(agent: str | None) -> str | None:
+        registry = Registry()
+        if agent is not None and agent not in registry.agents_map:
+            raise ValueError(
+                f"Agent {agent} is not registered. Available agents are: {', '.join(registry.agents_map.keys())}"
+            )
+        return agent
+
+    @model_validator(mode="after")
+    def validate_agent_config(self) -> Self:
+        if self.agent is not None and self.agent_config is not None:
+            agent_class = Registry().agents_map[self.agent]
+            agent_config_class = agent_class.get_config_class()
+            agent_config_class.model_validate(self.agent_config)
         return self
 
 

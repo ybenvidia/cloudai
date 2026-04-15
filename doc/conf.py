@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +17,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import inspect
 import os
 import re
 import sys
@@ -38,6 +39,14 @@ def autodoc_skip_member(app, what, name, obj, skip, options):
     if name.startswith("_") and name != "__init__":
         return True
 
+    # On the systems page, skip all methods and properties from pydantic models —
+    # only TOML-configurable fields are relevant. Pydantic fields bypass this hook entirely.
+    non_attr = (
+        inspect.isfunction(obj) or inspect.ismethod(obj) or isinstance(obj, (classmethod, staticmethod, property))
+    )
+    if what == "pydantic_model" and app.env.docname == "systems" and non_attr:
+        return True
+
     return skip
 
 
@@ -51,8 +60,8 @@ def setup(app):
 project = "CloudAI"
 copyright = "2026, NVIDIA CORPORATION & AFFILIATES"
 author = "NVIDIA CORPORATION & AFFILIATES"
-version = "1.5.0-beta"
-release = "1.5.0-beta"
+version = "1.6.0-beta"
+release = "1.6.0-beta"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -65,6 +74,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinxcontrib.mermaid",
     "sphinx_copybutton",
+    "sphinxcontrib.autodoc_pydantic",
 ]
 
 exclude_patterns = ["_build"]
@@ -74,8 +84,15 @@ autodoc_default_options = {
     "members": True,
     "member-order": "bysource",
     "special-members": "__init__",
-    "undoc-members": False,  # Don't show undocumented members
+    "inherited-members": "BaseModel",
 }
+
+autodoc_pydantic_model_show_json = False
+autodoc_pydantic_model_show_field_summary = False
+autodoc_pydantic_model_show_config_summary = False
+autodoc_pydantic_field_list_validators = False
+autodoc_pydantic_model_show_validator_summary = False
+autodoc_pydantic_model_show_validator_members = False
 
 # Generate autosummary even if no references
 autosummary_generate = True

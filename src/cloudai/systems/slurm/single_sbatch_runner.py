@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,15 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import copy
 import logging
+import time
 from datetime import timedelta
 from pathlib import Path
 from typing import Generator, Optional, cast
 
-from cloudai.configurator.cloudai_gym import CloudAIGymEnv
-from cloudai.core import JobIdRetrievalError, System, TestRun, TestScenario
+from cloudai.configurator import CloudAIGymEnv, TrajectoryEntry
+from cloudai.core import BaseJob, JobIdRetrievalError, Registry, System, TestRun, TestScenario
 from cloudai.util import CommandShell, format_time_limit, parse_time_limit
 
 from .slurm_command_gen_strategy import SlurmCommandGenStrategy
@@ -130,7 +130,7 @@ class SingleSbatchRunner(SlurmRunner):
             next_tr.step = idx + 1
             next_tr.output_path = self.get_job_output_path(next_tr)
 
-            if next_tr.test.constraint_check(next_tr):
+            if next_tr.test.constraint_check(next_tr, self.system):
                 yield next_tr
 
     def get_global_env_vars(self) -> str:
@@ -180,7 +180,7 @@ class SingleSbatchRunner(SlurmRunner):
                 tr.output_path = self.get_job_output_path(tr)
                 yield tr
 
-    async def run(self):
+    def run(self):
         if self.shutting_down:
             return
 
@@ -193,13 +193,14 @@ class SingleSbatchRunner(SlurmRunner):
             if self.shutting_down:
                 break
             is_completed = True if self.mode == "dry-run" else self.system.is_job_completed(job)
-            await asyncio.sleep(self.system.monitor_interval)
+            time.sleep(self.system.monitor_interval)
 
         self.handle_dse()
 
         self.on_job_completion(job)
 
     def handle_dse(self):
+        registry = Registry()
         for tr in self.test_scenario.test_runs:
             if not tr.is_dse_job:
                 continue
@@ -209,10 +210,26 @@ class SingleSbatchRunner(SlurmRunner):
                 next_tr.step = idx
                 next_tr.output_path = self.get_job_output_path(next_tr)
 
-                gym = CloudAIGymEnv(next_tr, self)
+                rewards = None
+                agent_class = registry.agents_map[next_tr.test.agent]
+                agent_config_data = next_tr.test.agent_config or {}
+                agent_config = agent_class.get_config_class()(**agent_config_data)
+                rewards = agent_config.rewards
+
+                gym = CloudAIGymEnv(next_tr, self, rewards=rewards)
                 observation = gym.get_observation({})
                 reward = gym.compute_reward(observation)
-                gym.write_trajectory(idx, combination, reward, observation)
+                gym.write_trajectory(
+                    TrajectoryEntry(
+                        step=idx,
+                        action=combination,
+                        reward=reward,
+                        observation=observation,
+                    )
+                )
+
+    def completed_test_runs(self, job: BaseJob) -> list[TestRun]:
+        return list(self.all_trs)
 
     def _submit_test(self, tr: TestRun) -> SlurmJob:
         with open(self.scenario_root / "cloudai_sbatch_script.sh", "w") as f:

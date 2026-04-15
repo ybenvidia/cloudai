@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import time
@@ -39,6 +40,7 @@ class KubernetesSystem(System):
     scheduler: str = "kubernetes"
     monitor_interval: int = 1
     gpus_per_node: int = 1
+    use_host_network: bool | None = None
     _core_v1: Optional[k8s.client.CoreV1Api] = None
     _batch_v1: Optional[k8s.client.BatchV1Api] = None
     _custom_objects_api: Optional[k8s.client.CustomObjectsApi] = None
@@ -49,12 +51,12 @@ class KubernetesSystem(System):
         state = self.model_dump(exclude={"_core_v1", "_batch_v1", "_custom_objects_api"})
         return state
 
-    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> "KubernetesSystem":  # noqa: Vulture
+    def __deepcopy__(self, _memo: dict[int, Any] | None = None) -> "KubernetesSystem":
         """
         Create a deep copy of the KubernetesSystem instance.
 
         Args:
-            memo: Dictionary to keep track of objects that have already been copied.
+            _memo: Dictionary to keep track of objects that have already been copied.
 
         Returns:
             A new KubernetesSystem instance with reinitialized Kubernetes clients.
@@ -64,7 +66,7 @@ class KubernetesSystem(System):
         new_instance.model_post_init(None)
         return new_instance
 
-    def model_post_init(self, __context: Any = None) -> None:  # noqa: Vulture
+    def model_post_init(self, _context: Any = None) -> None:
         """Initialize the KubernetesSystem instance."""
         kube_config_path = self.kube_config_path
         if not kube_config_path.is_file():
@@ -131,6 +133,45 @@ class KubernetesSystem(System):
         """
         pass
 
+    def get_network_attachment_definitions(self) -> list[str]:
+        """Return all NetworkAttachmentDefinitions in the cluster as 'namespace/name' strings."""
+        cmd = ["kubectl", "get", "network-attachment-definitions", "--all-namespaces", "-o", "json"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            logging.debug("Failed to list NetworkAttachmentDefinitions: %s", e.stderr)
+            return []
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            logging.debug("Failed to parse NetworkAttachmentDefinitions output: %s", e)
+            return []
+
+        return [f"{item['metadata']['namespace']}/{item['metadata']['name']}" for item in data.get("items", [])]
+
+    def resolve_cni_networks(self) -> list[str] | None:
+        """
+        Determine which CNI networks to use, or None if host networking should be used.
+
+        - use_host_network=True:  always use hostNetwork, skip CNI discovery.
+        - use_host_network=False: require CNI; raise if none are found.
+        - use_host_network=None:  try CNI, fall back to hostNetwork if none found.
+        """
+        if self.use_host_network is True:
+            return None
+
+        if networks := self.get_network_attachment_definitions():
+            return networks
+
+        if self.use_host_network is False:
+            raise RuntimeError(
+                "use_host_network=False but no NetworkAttachmentDefinitions were found in the cluster. "
+                "Ensure the CNI operator is installed and net-attach-defs are configured."
+            )
+
+        return None  # auto mode: fall back to hostNetwork
+
     def is_job_running(self, job: BaseJob) -> bool:
         k_job: KubernetesJob = cast(KubernetesJob, job)
         return self._is_job_running(k_job)
@@ -143,7 +184,7 @@ class KubernetesSystem(System):
         logging.debug(f"Checking for job '{job.name}' of kind '{job.kind}' to determine if it is running.")
 
         if "mpijob" in job.kind.lower():
-            return self._is_mpijob_running(job.name)
+            return self._is_mpijob_running(job)
         elif "job" in job.kind.lower():
             return self._is_batch_job_running(job.name)
         elif "dynamographdeployment" in job.kind.lower():
@@ -153,20 +194,22 @@ class KubernetesSystem(System):
             logging.error(error_message)
             raise ValueError(error_message)
 
-    def _is_mpijob_running(self, job_name: str) -> bool:
+    def _is_mpijob_running(self, job: KubernetesJob) -> bool:
         try:
             mpijob = self.custom_objects_api.get_namespaced_custom_object(
                 group="kubeflow.org",
                 version="v2beta1",
                 namespace=self.default_namespace,
                 plural="mpijobs",
-                name=job_name,
+                name=job.name,
             )
 
             assert isinstance(mpijob, dict)
             status: dict = cast(dict, mpijob.get("status", {}))
             conditions = status.get("conditions", [])
-            logging.debug(f"MPIJob '{job_name}': {conditions=} {status=}")
+            logging.debug(f"MPIJob '{job.name}': {conditions=} {status=}")
+
+            self.store_logs_for_job(job.name, job.test_run.output_path)
 
             # Consider an empty conditions list as running
             if not conditions:
@@ -183,11 +226,11 @@ class KubernetesSystem(System):
 
         except lazy.k8s.client.ApiException as e:
             if e.status == 404:
-                logging.debug(f"MPIJob '{job_name}' not found. It may have completed and been removed from the system.")
+                logging.debug(f"MPIJob '{job.name}' not found. It may have completed and been removed from the system.")
                 return False
             else:
                 error_message = (
-                    f"Error occurred while retrieving status for MPIJob '{job_name}' "
+                    f"Error occurred while retrieving status for MPIJob '{job.name}' "
                     f"Error code: {e.status}. Message: {e.reason}. Please check the job name, namespace, and "
                     "Kubernetes API server."
                 )
@@ -291,52 +334,113 @@ class KubernetesSystem(System):
     def _run_genai_perf(self, job: KubernetesJob) -> None:
         from cloudai.workloads.ai_dynamo.ai_dynamo import AIDynamoTestDefinition
 
-        tdef = job.test_run.test
-        if not isinstance(tdef, AIDynamoTestDefinition):
+        if not isinstance(job.test_run.test, AIDynamoTestDefinition):
             raise TypeError("Test definition must be an instance of AIDynamoTestDefinition")
+        tdef = cast(AIDynamoTestDefinition, job.test_run.test)
 
         genai_perf_results_path = "/tmp/cloudai/genai-perf"
-
-        genai_perf_cmd = ["genai-perf", "profile", f"--artifact-dir={genai_perf_results_path}"]
-        for k, v in tdef.cmd_args.genai_perf.model_dump(
-            exclude={"extra_args", "extra-args"}, exclude_none=True
-        ).items():
-            genai_perf_cmd.append(f"--{k}={v}")
-        if extra_args := tdef.cmd_args.genai_perf.extra_args:
-            genai_perf_cmd.extend(extra_args.split())
-        logging.debug(f"GenAI perf arguments: {genai_perf_cmd=}")
-
         frontend_pod = self._get_dynamo_pod_by_role(role="frontend")
 
-        logging.debug(f"Executing genai-perf in pod={frontend_pod} cmd={genai_perf_cmd}")
-        try:
-            genai_results = lazy.k8s.stream.stream(
-                self.core_v1.connect_get_namespaced_pod_exec,
-                name=frontend_pod,
-                namespace=self.default_namespace,
-                command=genai_perf_cmd,
-                stderr=True,
-                stdin=False,
-                stdout=True,
-                tty=False,
-                _request_timeout=60 * 10,
-            )
-            with (job.test_run.output_path / "genai_perf.log").open("w") as f:
-                f.write(genai_results)
-        except lazy.k8s.client.ApiException as e:
-            logging.error(f"Error executing genai-perf command in pod '{frontend_pod}': {e}")
+        wrapper_script_path = tdef.cmd_args.genai_perf.script.installed_path
 
-        cp_logs_cmd = " ".join(
-            [
-                "kubectl",
-                "cp",
-                f"{self.default_namespace}/{frontend_pod}:{genai_perf_results_path}",
-                str(job.test_run.output_path / "genai-perf"),
-            ]
-        )
-        logging.debug(f"Copying genai-perf results with command: {cp_logs_cmd}")
-        p = subprocess.run(cp_logs_cmd, shell=True, capture_output=True, text=True)
-        logging.debug(f"Returned code {p.returncode}, stdout: {p.stdout}, stderr: {p.stderr}")
+        pod_wrapper_path = "/tmp/genai_perf.sh"
+
+        logging.debug(f"Copying wrapper script {wrapper_script_path} to pod {frontend_pod}")
+        cp_wrapper_cmd = [
+            "kubectl",
+            "cp",
+            str(wrapper_script_path),
+            f"{self.default_namespace}/{frontend_pod}:{pod_wrapper_path}",
+        ]
+        subprocess.run(cp_wrapper_cmd, capture_output=True, text=True, check=True)
+
+        chmod_cmd = ["chmod", "+x", pod_wrapper_path]
+        kubectl_exec_cmd = ["kubectl", "exec", "-n", self.default_namespace, frontend_pod, "--", *chmod_cmd]
+        logging.debug(f"Making wrapper script executable in pod={frontend_pod}")
+        try:
+            result = subprocess.run(kubectl_exec_cmd, capture_output=True, text=True, timeout=60 * 10, check=True)
+            logging.debug(f"chmod exited {result.returncode}: {result.stdout} {result.stderr}")
+        except Exception as e:
+            logging.debug(f"Error making wrapper script executable in pod '{frontend_pod}': {e}")
+
+        genai_perf_config: list[str] = [
+            "--cmd",
+            tdef.cmd_args.genai_perf.cmd,
+            "--report-name",
+            tdef.cmd_args.genai_perf.report_name,
+        ]
+
+        extra_args = tdef.cmd_args.genai_perf.extra_args
+        if isinstance(extra_args, list):
+            extra_args = " ".join(extra_args)
+        if extra_args:
+            genai_perf_config.extend(["--extra-args", extra_args])
+
+        # Build genai-perf arguments as --key value pairs for parse_genai_perf_args
+        genai_perf_cmd_parts: list[str] = []
+        if tdef.cmd_args.genai_perf.args:
+            for k, v in tdef.cmd_args.genai_perf.args.model_dump(exclude_none=True).items():
+                genai_perf_cmd_parts.extend([f"--{k}", str(v)])
+
+        wrapper_cmd = [
+            "/bin/bash",
+            pod_wrapper_path,
+            "--result-dir",
+            genai_perf_results_path,
+            "--gpus-per-node",
+            str(self.gpus_per_node),
+            "--model",
+            tdef.cmd_args.dynamo.model,
+            "--url",
+            "http://localhost",
+            "--port",
+            str(tdef.cmd_args.dynamo.port),
+            "--endpoint",
+            tdef.cmd_args.dynamo.endpoint,
+            *genai_perf_config,
+            "--",
+            *genai_perf_cmd_parts,
+        ]
+
+        kubectl_exec_cmd = ["kubectl", "exec", "-n", self.default_namespace, frontend_pod, "--", *wrapper_cmd]
+        logging.debug(f"Executing genai-perf in pod={frontend_pod} cmd={kubectl_exec_cmd}")
+        try:
+            result = subprocess.run(kubectl_exec_cmd, capture_output=True, text=True, timeout=60 * 10)
+            logging.debug(f"genai-perf exited with code {result.returncode}")
+            with (job.test_run.output_path / "genai_perf.log").open("w") as f:
+                f.write(result.stdout)
+                if result.stderr:
+                    f.write("\nSTDERR:\n")
+                    f.write(result.stderr)
+        except Exception as e:
+            logging.debug(f"Error executing genai-perf command in pod '{frontend_pod}': {e}")
+
+        self._copy_genai_perf_results(job, frontend_pod, genai_perf_results_path)
+
+    def _copy_genai_perf_results(self, job: KubernetesJob, frontend_pod: str, genai_perf_results_path: str) -> None:
+        from cloudai.workloads.ai_dynamo.ai_dynamo import AIDynamoTestDefinition
+
+        tdef = cast(AIDynamoTestDefinition, job.test_run.test)
+        assert isinstance(tdef, AIDynamoTestDefinition)
+        cmd = [
+            "kubectl",
+            "cp",
+            f"{self.default_namespace}/{frontend_pod}:{genai_perf_results_path}",
+            str(job.test_run.output_path),
+        ]
+        logging.debug(f"Copying results with command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error(f"Error copying results with command: {' '.join(cmd)}: {result.stderr}")
+            return
+
+        report_path = job.test_run.output_path / tdef.cmd_args.genai_perf.report_name
+        if not report_path.exists():
+            logging.error(f"Genai-perf report not found at {report_path}")
+            return
+
+        (job.test_run.output_path / tdef.success_marker).touch()
+        logging.debug(f"Success marker touched at {job.test_run.output_path / tdef.success_marker}")
 
     def _check_deployment_conditions(self, conditions: list) -> bool:
         logging.debug(f"Checking deployment conditions: {conditions}")
@@ -392,6 +496,7 @@ class KubernetesSystem(System):
             job (BaseJob): The job to be terminated.
         """
         k_job: KubernetesJob = cast(KubernetesJob, job)
+        self.store_logs_for_job(k_job.name, k_job.test_run.output_path)
         self.delete_job(k_job.name, k_job.kind)
 
     def delete_job(self, job_name: str, job_kind: str) -> None:

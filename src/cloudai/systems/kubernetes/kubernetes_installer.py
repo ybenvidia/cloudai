@@ -113,6 +113,12 @@ class KubernetesInstaller(BaseInstaller):
         elif isinstance(item, GitRepo):
             repo_path = self.system.install_path / item.repo_name
             if repo_path.exists():
+                verify_res = self._verify_commit(item.commit, repo_path)
+                if not verify_res.success:
+                    return verify_res
+                verify_submodules, msg_submodules = item.check_submodules_state(repo_path)
+                if not verify_submodules:
+                    return InstallStatusResult(False, msg_submodules)
                 item.installed_path = repo_path
                 return InstallStatusResult(True)
             return InstallStatusResult(False, f"Git repository {item.url} not cloned")
@@ -150,20 +156,43 @@ class KubernetesInstaller(BaseInstaller):
     def _install_one_git_repo(self, item: GitRepo) -> InstallStatusResult:
         repo_path = self.system.install_path / item.repo_name
         if repo_path.exists():
+            verify_res = self._verify_commit(item.commit, repo_path)
+            if not verify_res.success:
+                return verify_res
+            submodules_res, submodules_msg = item.ensure_submodules_state(repo_path)
+            if not submodules_res:
+                return InstallStatusResult(False, submodules_msg)
             item.installed_path = repo_path
             msg = f"Git repository already exists at {repo_path}."
             logging.debug(msg)
             return InstallStatusResult(True, msg)
 
+        res = self._clone_and_setup_repo(item, repo_path)
+        if not res.success:
+            return res
+
+        item.installed_path = repo_path
+        return InstallStatusResult(True)
+
+    def _clone_and_setup_repo(self, item: GitRepo, repo_path: Path) -> InstallStatusResult:
         res = self._clone_repository(item.url, repo_path)
         if not res.success:
             return res
 
         res = self._checkout_commit(item.commit, repo_path)
         if not res.success:
+            logging.error(f"Checkout failed, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
             return res
 
-        item.installed_path = repo_path
+        submodules_res, submodules_msg = item.ensure_submodules_state(repo_path)
+        if not submodules_res:
+            logging.error(f"Submodule setup failed with `{submodules_msg}`, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
+            return InstallStatusResult(False, submodules_msg)
+
         return InstallStatusResult(True)
 
     def _install_python_executable(self, item: PythonExecutable) -> InstallStatusResult:
@@ -225,8 +254,52 @@ class KubernetesInstaller(BaseInstaller):
         checkout_cmd = ["git", "checkout", commit_hash]
         result = subprocess.run(checkout_cmd, cwd=str(path), capture_output=True, text=True)
         if result.returncode != 0:
-            return InstallStatusResult(False, f"Failed to checkout commit: {result.stderr}")
+            return InstallStatusResult(False, f"Failed to checkout commit {commit_hash}: {result.stderr}")
         return InstallStatusResult(True)
+
+    def _verify_commit(self, ref: str, path: Path) -> InstallStatusResult:
+        try:
+            result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(path), capture_output=True, text=True)
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {result.stderr}")
+        actual_commit = result.stdout.strip()
+
+        try:
+            commit_resolved = subprocess.run(
+                ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if commit_resolved.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {commit_resolved.stderr}")
+        expected_commit = commit_resolved.stdout.strip()
+
+        try:
+            branch_resolved = subprocess.run(
+                ["git", "symbolic-ref", "--short", "-q", "HEAD"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        actual_branch = branch_resolved.stdout.strip() if branch_resolved.returncode == 0 else ""
+
+        if actual_commit == expected_commit or ref == actual_branch:
+            return InstallStatusResult(True)
+
+        return InstallStatusResult(
+            success=False,
+            message=(
+                f"Failed to verify commit in {path}: {actual_commit=}, {actual_branch=}, expected was {ref} or "
+                f"{expected_commit=}"
+            ),
+        )
 
     def _create_venv(self, item: PythonExecutable) -> InstallStatusResult:
         venv_path = self.system.install_path / item.venv_name

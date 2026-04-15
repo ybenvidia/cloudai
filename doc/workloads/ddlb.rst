@@ -1,7 +1,7 @@
 DDLB
 ====
 
-This workload (`test_template_name` is ``DDLB``) allows users to execute DDLB (Distributed Deep Learning Benchmarks) within the CloudAI framework. Please find the DDLB README at https://github.com/samnordmann/ddlb.
+DDLB workload (`test_template_name` is ``DDLB``) allows users to execute DDLB (Distributed Deep Learning Benchmarks) within the CloudAI framework. Please find the DDLB README at https://github.com/samnordmann/ddlb.
 
 Usage Examples
 --------------
@@ -74,4 +74,3 @@ Test Definition
 .. autoclass:: cloudai.workloads.ddlb.ddlb.DDLBTestDefinition
    :members:
    :show-inheritance:
-

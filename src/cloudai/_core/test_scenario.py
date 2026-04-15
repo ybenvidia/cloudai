@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@ import copy
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Type, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Type, TypeAlias, Union
 
 from ..util import flatten_dict
 from .system import System
@@ -31,7 +31,27 @@ if TYPE_CHECKING:
     from .report_generation_strategy import ReportGenerationStrategy
 
 
-METRIC_ERROR = -1.0
+class MetricErrorSentinel:
+    """Singleton returned by report strategies on failure; use ``v is METRIC_ERROR`` to detect errors."""
+
+    __slots__ = ()
+    _instance: MetricErrorSentinel | None = None
+
+    def __new__(cls) -> MetricErrorSentinel:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "METRIC_ERROR"
+
+    def __float__(self) -> float:
+        return -1.0
+
+
+METRIC_ERROR = MetricErrorSentinel()
+
+MetricValue: TypeAlias = float | MetricErrorSentinel
 
 
 class TestDependency:
@@ -62,6 +82,7 @@ class TestRun:
     test: TestDefinition
     num_nodes: Union[int, list[int]]
     nodes: List[str]
+    exclude_nodes: List[str] = field(default_factory=list)
     output_path: Path = Path("")
     iterations: int = 1
     current_iteration: int = 0
@@ -102,7 +123,7 @@ class TestRun:
 
         return None
 
-    def get_metric_value(self, system: System, metric: str) -> float:
+    def get_metric_value(self, system: System, metric: str) -> MetricValue:
         report = self.metric_reporter
         if report is None:
             return METRIC_ERROR

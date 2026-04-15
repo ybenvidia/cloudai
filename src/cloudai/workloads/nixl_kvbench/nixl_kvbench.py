@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,18 +18,20 @@ from __future__ import annotations
 
 from typing import Literal
 
-from cloudai.core import CmdArgs, DockerImage, Installable, JobStatusResult, TestDefinition, TestRun
-from cloudai.workloads.common.nixl import extract_nixlbench_data
+from cloudai.core import JobStatusResult, TestRun
+from cloudai.workloads.common.nixl import (
+    NIXLBaseCmdArgs,
+    NIXLBaseTestDefinition,
+    NIXLExtendedCmdArgs,
+    extract_nixlbench_data,
+)
 
 
-class NIXLKVBenchCmdArgs(CmdArgs):
-    """Command line arguments for NIXLKVBench."""
+class NIXLKVBenchCmdArgs(NIXLBaseCmdArgs, NIXLExtendedCmdArgs):
+    """Command line arguments for NIXL KVBench."""
 
     command: Literal["profile"] = "profile"
-    etcd_path: str = "etcd"
-    wait_etcd_for: int = 60
 
-    docker_image_url: str
     kvbench_script: str = "/workspace/nixl/benchmark/kvbench/main.py"
     python_executable: str = "python"
 
@@ -39,21 +41,8 @@ class NIXLKVBenchCmdArgs(CmdArgs):
     backend: str | list[str] | None = None
 
 
-class NIXLKVBenchTestDefinition(TestDefinition):
-    """Test definition for NIXLKVBench."""
-
-    _docker_image: DockerImage | None = None
-    cmd_args: NIXLKVBenchCmdArgs
-
-    @property
-    def docker_image(self) -> DockerImage:
-        if not self._docker_image:
-            self._docker_image = DockerImage(url=self.cmd_args.docker_image_url)
-        return self._docker_image
-
-    @property
-    def installables(self) -> list[Installable]:
-        return [*self.git_repos, self.docker_image]
+class NIXLKVBenchTestDefinition(NIXLBaseTestDefinition[NIXLKVBenchCmdArgs]):
+    """Test definition for NIXL KVBench."""
 
     @property
     def cmd_args_dict(self) -> dict[str, str | list[str]]:
@@ -65,7 +54,9 @@ class NIXLKVBenchTestDefinition(TestDefinition):
                 "wait_etcd_for",
                 "docker_image_url",
                 "command",
+                "etcd_image_url",
             },
+            exclude_none=True,
         )
 
     def was_run_successful(self, tr: TestRun) -> JobStatusResult:

@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import stat
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import toml
 
@@ -35,6 +36,14 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
 
     The launcher submits the actual training sbatch job; CloudAI tracks that job ID via SlurmRunner parsing.
     """
+
+    CONTAINER_RUNTIME_ENV_VARS: frozenset[str] = frozenset(
+        {
+            "MELLANOX_VISIBLE_DEVICES",
+            "NVIDIA_VISIBLE_DEVICES",
+            "NVIDIA_DRIVER_CAPABILITIES",
+        }
+    )
 
     def _container_mounts(self) -> list[str]:
         # This workload submits its own sbatch job and passes mounts via `-cm`.
@@ -65,7 +74,8 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         launcher_py = (mbridge_repo_path / "scripts" / "performance" / "setup_experiment.py").absolute()
 
         parts = self._build_launcher_parts(args, tdef, mbridge_repo_path, launcher_py)
-        full_cmd = self._wrap_launcher_for_job_id_and_quiet_output(" ".join(parts))
+        launcher_python = str((venv_path / "bin" / "python").absolute())
+        full_cmd = self._wrap_launcher_for_job_id_and_quiet_output(" ".join(parts), launcher_python)
 
         self._write_command_to_file(full_cmd, self.test_run.output_path)
         return full_cmd
@@ -82,6 +92,37 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         with log_file.open("w") as f:
             f.write(f"{command}\n")
 
+    def _build_custom_bash_env_exports(self) -> list[str]:
+        """
+        Build repeated -cb entries that export env vars inside the launched Slurm job shell.
+
+        We quote each full `export KEY=value` command so `$SLURM_*` and commas survive
+        argument parsing on the submit node and are expanded/interpreted in the job shell.
+        """
+        exports: list[str] = []
+        for key, value in sorted(self.final_env_vars.items()):
+            exports.extend(["-cb", shlex.quote(f"export {key}={value}")])
+        return exports
+
+    def _container_runtime_env_exports(self) -> list[str]:
+        """
+        Build ``export`` lines for container-runtime env vars.
+
+        Variables like ``MELLANOX_VISIBLE_DEVICES`` and ``NVIDIA_VISIBLE_DEVICES``
+        are consumed by the NVIDIA container toolkit / enroot at container-creation
+        time to decide which devices to mount.  They must be present in the process
+        environment **before** the Megatron-Bridge launcher calls ``sbatch`` so that
+        Slurm inherits them into the job and ``srun`` passes them to the container
+        runtime.  Exporting them in the wrapper script (which runs on the submit
+        node) achieves this.  The same variables are still passed via ``-cb`` as
+        well, so they are also set inside the container for any runtime readers.
+        """
+        lines: list[str] = []
+        for key, value in sorted(self.final_env_vars.items()):
+            if key in self.CONTAINER_RUNTIME_ENV_VARS:
+                lines.append(f"export {key}={shlex.quote(str(value))}")
+        return lines
+
     def _normalize_recompute_modules(self, val: Any) -> str:
         if isinstance(val, list):
             items = [str(x).strip().strip("\"'") for x in val if str(x).strip()]
@@ -94,6 +135,30 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         joined = ",".join(items)
         return f'"{joined}"'
 
+    @staticmethod
+    def _parse_srun_args_as_slurm_params(srun_args: str) -> list[str]:
+        """
+        Convert ``--key value`` pairs from extra_srun_args into ``key=value`` for --additional_slurm_params.
+
+        Standalone boolean flags (e.g. ``--exclusive``) are emitted as bare
+        key names without a ``=value`` suffix.
+        """
+        params: list[str] = []
+        tokens = shlex.split(srun_args)
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            if tok.startswith("--") and "=" in tok:
+                key, val = tok[2:].split("=", 1)
+                params.append(f"{key}={val}")
+            elif tok.startswith("--") and i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
+                params.append(f"{tok[2:]}={tokens[i + 1]}")
+                i += 1
+            elif tok.startswith("--"):
+                params.append(tok[2:])
+            i += 1
+        return params
+
     def _normalize_cuda_graph_scope_arg(self, val: Any) -> str:
         s = str(val).strip().strip("\"'")
         if s.startswith("[") and s.endswith("]"):
@@ -101,7 +166,7 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         parts = [p.strip().strip("\"'") for p in s.split(",") if p.strip()]
         return ",".join(parts)
 
-    def _wrap_launcher_for_job_id_and_quiet_output(self, launcher_cmd: str) -> str:
+    def _wrap_launcher_for_job_id_and_quiet_output(self, launcher_cmd: str, launcher_python: str) -> str:
         """
         Run the Megatron-Bridge launcher quietly and ensure CloudAI can parse a job ID.
 
@@ -114,9 +179,11 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         wrapper_path = output_dir / "cloudai_megatron_bridge_submit_and_parse_jobid.sh"
         log_path = output_dir / "cloudai_megatron_bridge_launcher.log"
 
+        container_runtime_exports = self._container_runtime_env_exports()
+
         script_lines = [
             "#!/usr/bin/env bash",
-            "set -uo pipefail",
+            "set -o pipefail",
             "",
             f'export NEMORUN_HOME="{output_dir}"',
             'mkdir -p "$NEMORUN_HOME"',
@@ -126,24 +193,32 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             # Mirror wrapper stdout/stderr to files for debugging while still emitting to the parent process.
             'exec > >(tee -a "$WRAPPER_STDOUT") 2> >(tee -a "$WRAPPER_STDERR" >&2)',
             "",
-            # Launch Megatron-Bridge (log stdout/stderr to file)
+            *container_runtime_exports,
             "",
             ': >"$LOG"',
+            "WANDB_INSTALL_RC=0",
+            f'{shlex.quote(launcher_python)} -m pip install wandb numpy==1.26.4 >>"$LOG" 2>&1 || WANDB_INSTALL_RC=$?',
+            'if [ "${WANDB_INSTALL_RC}" -ne 0 ]; then',
+            '  echo "Failed to install runtime deps (wandb, numpy==1.26.4) in launcher venv (exit ${WANDB_INSTALL_RC})." >&2',  # noqa: E501
+            '  tail -n 40 "$LOG" >&2 || true',
+            '  exit "${WANDB_INSTALL_RC}"',
+            "fi",
+            "",
             "LAUNCH_RC=0",
             f'{launcher_cmd} >>"$LOG" 2>&1 || LAUNCH_RC=$?',
             "",
             # Parse job id from Megatron-Bridge output (multiple possible formats)
+            # Patterns: "Submitted batch job 694112", "Job id: 694112", "- Job id: 694112", "Job ID: 694112"
             "",
             'JOB_ID=""',
-            'JOB_ID=$(grep -Eio "Job[[:space:]]+id[: ]+[0-9]+" "$LOG" | '
-            'tail -n1 | grep -Eo "[0-9]+" | tail -n1 || true)',
+            'JOB_ID=$(grep -Eio "(Submitted batch job[ ]+[0-9]+|Job id[: ]+[0-9]+|-[ ]*Job id[: ]+[0-9]+|Job ID[: ]+[0-9]+)" "$LOG" | tail -n1 | grep -Eo "[0-9]+" | tail -n1 || true)',  # noqa: E501
             "",
             # Emit a canonical line for CloudAI to parse
             "",
             'if [ -n "${JOB_ID}" ]; then',
             '  if [ "${LAUNCH_RC}" -ne 0 ]; then',
             '    echo "Megatron-Bridge launcher exited non-zero (${LAUNCH_RC}) after submitting job ${JOB_ID}." >&2',
-            '    tail -n 200 "$LOG" >&2 || true',
+            '    tail -n 40 "$LOG" >&2 || true',
             "  fi",
             '  echo "Submitted batch job ${JOB_ID}"',
             "else",
@@ -151,7 +226,7 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             '  if [ "${LAUNCH_RC}" -ne 0 ]; then',
             '    echo "Launcher exit code: ${LAUNCH_RC}" >&2',
             "  fi",
-            '  tail -n 200 "$LOG" >&2 || true',
+            '  tail -n 40 "$LOG" >&2 || true',
             "  exit 1",
             "fi",
             "",
@@ -162,13 +237,22 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
 
         return f"bash {wrapper_path}"
 
+    def _list_or_comma_str(self, val: str | list[str] | None) -> Optional[str]:
+        """Normalize list or comma-separated string; return None if `val` is empty or None."""
+        if val is None:
+            return None
+        elif isinstance(val, str):
+            return val.strip() or None
+        else:
+            raise RuntimeError("Unexpected sweeps list. At this point code expects scalars only")
+
     def _build_launcher_parts(  # noqa: C901
         self, args: MegatronBridgeCmdArgs, tdef: MegatronBridgeTestDefinition, repo_path: Path, launcher_py: Path
     ) -> list[str]:
         fields_set = args.model_fields_set
         force_fields = {
-            "model_name",
-            "model_size",
+            "model_family_name",
+            "model_recipe_name",
             "num_gpus",
             "gpus_per_node",
             "hf_token",
@@ -194,9 +278,14 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             else:
                 container_path = _installed_container_path()
 
-        mounts: list[str] = []
-        mounts.append(f"{repo_path.absolute()}:/opt/Megatron-Bridge")
-        mounts.extend(tdef.extra_container_mounts or [])
+        mounts: list[str] = [str(m).strip() for m in (tdef.extra_container_mounts or []) if str(m).strip()]
+
+        # When the user sets mount_as on the Megatron-Bridge git repo, bind-mount the
+        # installed clone into the container to override the image's built-in copy.
+        mb_repo = tdef.megatron_bridge_repo
+        if mb_repo.mount_as:
+            mb_host = mb_repo.installed_path.absolute() if mb_repo.installed_path else repo_path
+            mounts.append(f"{mb_host}:{mb_repo.mount_as}")
 
         venv_path = tdef.python_executable.venv_path or (self.system.install_path / tdef.python_executable.venv_name)
         python_bin = (venv_path / "bin" / "python").absolute()
@@ -211,6 +300,15 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
                 return
             if isinstance(value, bool):
                 parts.extend([flag, "true" if value else "false"])
+            elif isinstance(value, (list, tuple)):
+                if not value:
+                    return
+                if flag == "--dataset_paths":
+                    parts.extend([flag, *[str(x) for x in value]])
+                elif flag == "--profiling_ranks":
+                    parts.extend([flag, ",".join(str(x) for x in value)])
+                else:
+                    parts.extend([flag, str(value[0]) if len(value) == 1 else ",".join(str(x) for x in value)])
             else:
                 sv = str(value)
                 if sv != "":
@@ -227,7 +325,7 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         add("-p", self.system.default_partition)
         add_field("gpu_type", "-g", args.gpu_type)
         add_field("log_dir", "-l", args.log_dir)
-        add_field("time_limit", "-t", args.time_limit)
+        add("-t", self.test_run.time_limit)
         if container_path:
             add_field("container_image", "-i", container_path)
         add_field("compute_dtype", "-c", args.compute_dtype)
@@ -235,31 +333,49 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         add_field("hf_token", "-hf", args.hf_token)
         add_field("nemo_home", "-nh", args.nemo_home)
         add_field("wandb_key", "-wdk", args.wandb_key)
-        add_field("wandb_prj_name", "-wdp", args.wandb_prj_name)
-        add_field("wandb_exp_name", "-wdj", args.wandb_exp_name)
+        add_field("wandb_project_name", "-wdp", args.wandb_project_name)
+        add_field("wandb_entity_name", "-wde", args.wandb_entity_name)
+        add_field("wandb_experiment_name", "-wdj", args.wandb_experiment_name)
+        add_field("wandb_save_dir", "-wds", args.wandb_save_dir)
+        add_field("max_retries", "--max_retries", args.max_retries)
         if args.dryrun and "dryrun" in fields_set:
             parts.append("-d")
         add_field("num_gpus", "-ng", args.num_gpus)
-        add_field("gpus_per_node", "-gn", args.gpus_per_node)
+        add_field("gpus_per_node", "-gn", self.system.gpus_per_node)
         if mounts:
             add("-cm", ",".join(mounts))
 
-        # Model flags (Megatron-Bridge r0.2.0 API)
+        # Pass extra env variables as `-cb export KEY=value` commands to avoid Megatron-Bridge's
+        # --custom_env_vars parser limitation for comma-containing values.
+        if self.final_env_vars:
+            parts.extend(self._build_custom_bash_env_exports())
+
+        # Model flags (Megatron-Bridge main-branch API)
+        add_field("domain", "--domain", args.domain)
+        if args.use_recipes and "use_recipes" in fields_set:
+            parts.append("--use_recipes")
         if "enable_vboost" in fields_set:
             add_field("enable_vboost", "-vb", bool(args.enable_vboost))
-        if not args.model_name:
-            raise RuntimeError("Missing required cmd_args.model_name (maps to -m/--model_name).")
-        if not args.model_size:
-            raise RuntimeError("Missing required cmd_args.model_size (maps to -s/--model_size).")
-        add_field("model_name", "-m", args.model_name)
-        add_field("model_size", "-s", args.model_size)
+        if not args.model_family_name:
+            raise RuntimeError("Missing required cmd_args.model_family_name (maps to -m/--model_family_name).")
+        if not args.model_recipe_name:
+            raise RuntimeError("Missing required cmd_args.model_recipe_name (maps to -mr/--model_recipe_name).")
+        add_field("model_family_name", "-m", args.model_family_name)
+        add_field("model_recipe_name", "-mr", args.model_recipe_name)
+        add_field("hidden_size", "--hidden_size", args.hidden_size)
+        add_field("num_layers", "--num_layers", args.num_layers)
+        add_field(
+            "pipeline_model_parallel_layout", "--pipeline_model_parallel_layout", args.pipeline_model_parallel_layout
+        )
+        add_field("first_k_dense_replace", "--first_k_dense_replace", args.first_k_dense_replace)
         if args.enable_nsys and "enable_nsys" in fields_set:
             parts.append("-en")
-        add_field("domain", "--domain", args.domain)
         if "use_tokendrop" in fields_set and args.use_tokendrop is not None:
             add_field("use_tokendrop", "--use_tokendrop", bool(args.use_tokendrop))
         if "use_megatron_fsdp" in fields_set and args.use_megatron_fsdp is not None:
             add_field("use_megatron_fsdp", "--use_megatron_fsdp", bool(args.use_megatron_fsdp))
+        if "nccl_ub" in fields_set and args.nccl_ub is not None:
+            add_field("nccl_ub", "--nccl_ub", bool(args.nccl_ub))
         add_field("cuda_graph_impl", "--cuda_graph_impl", args.cuda_graph_impl)
         if args.cuda_graph_scope and "cuda_graph_scope" in fields_set:
             add_field(
@@ -270,13 +386,20 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         add_field("tp", "-tp", args.tp)
         add_field("pp", "-pp", args.pp)
         add_field("cp", "-cp", args.cp)
-        add_field("vp", "-vp", args.vp)
+        # When vp is 1 (or [1]), pass None so -vp is not emitted in sbatch
+        vp_for_launcher = args.vp
+        if vp_for_launcher == 1 or (
+            isinstance(vp_for_launcher, (list, tuple)) and len(vp_for_launcher) == 1 and vp_for_launcher[0] == 1
+        ):
+            vp_for_launcher = "None"
+        add_field("vp", "-vp", vp_for_launcher)
         add_field("ep", "-ep", args.ep)
         add_field("et", "-et", args.et)
 
         # Batch
         add_field("mb", "-mb", args.mb)
         add_field("gb", "-gb", args.gb)
+        add_field("seq_length", "-sl", args.seq_length)
 
         # Misc
         if "moe_a2a_overlap" in fields_set:
@@ -286,11 +409,72 @@ class MegatronBridgeSlurmCommandGenStrategy(SlurmCommandGenStrategy):
         add_field("activation_offload_layers", "-ol", args.activation_offload_layers)
         if args.recompute_modules and "recompute_modules" in fields_set:
             parts.extend(["--recompute_modules", self._normalize_recompute_modules(args.recompute_modules)])
-        # r0.2.0 supports `--detach` / `--no-detach` flags (no boolean value)
-        if args.detach is True and "detach" in fields_set:
-            parts.append("--detach")
-        elif args.detach is False and "detach" in fields_set:
-            parts.append("--no-detach")
+
+        # The workload is implemented to work only with non-detached MBridge run to obtain perf metrics
+        parts.extend(["--detach", "false"])
+
+        # Optimizer
+        add_field("lr", "--lr", args.lr)
+        add_field("min_lr", "--min_lr", args.min_lr)
+        add_field("warmup_iters", "--warmup_iters", args.warmup_iters)
+
+        # Checkpointing
+        add_field("pretrained_checkpoint", "--pretrained_checkpoint", args.pretrained_checkpoint)
+        add_field("save_dir", "--save_dir", args.save_dir)
+        add_field("load_dir", "--load_dir", args.load_dir)
+        add_field("save_interval", "--save_interval", args.save_interval)
+        add_field("most_recent_k", "--most_recent_k", args.most_recent_k)
+        add_field("save_config_filepath", "--save_config_filepath", args.save_config_filepath)
+
+        # Data / Tokenizer
+        add_field("data", "--data", args.data)
+        add_field("dataset_paths", "--dataset_paths", args.dataset_paths)
+        add_field("dataset_root", "--dataset_root", args.dataset_root)
+        add_field("index_mapping_dir", "--index_mapping_dir", args.index_mapping_dir)
+        add_field("dataset_name", "--dataset_name", args.dataset_name)
+        if args.packed_sequence and "packed_sequence" in fields_set:
+            parts.append("--packed_sequence")
+        if args.head_only and "head_only" in fields_set:
+            parts.append("--head_only")
+        add_field("tokenizer_type", "--tokenizer_type", args.tokenizer_type)
+        add_field("tokenizer_model", "--tokenizer_model", args.tokenizer_model)
+        add_field("vocab_size", "--vocab_size", args.vocab_size)
+
+        # Profiling (performance group)
+        add_field("pytorch_profiler", "-pyp", args.pytorch_profiler)
+        add_field("profiling_start_step", "--profiling_start_step", args.profiling_start_step)
+        add_field("profiling_stop_step", "--profiling_stop_step", args.profiling_stop_step)
+        add_field("record_memory_history", "-mh", args.record_memory_history)
+        if args.profiling_gpu_metrics and "profiling_gpu_metrics" in fields_set:
+            parts.append("--profiling_gpu_metrics")
+        add_field("profiling_ranks", "--profiling_ranks", args.profiling_ranks)
+        add_field("nsys_trace", "--nsys_trace", self._list_or_comma_str(args.nsys_trace))
+        add_field("nsys_extra_args", "--nsys_extra_args", self._list_or_comma_str(args.nsys_extra_args))
+
+        additional_slurm_params: list[str] = []
+
+        if self.system.gpus_per_node and self.system.supports_gpu_directives:
+            additional_slurm_params.append(f"gpus-per-node={self.system.gpus_per_node}")
+            additional_slurm_params.append(f"gres=gpu:{self.system.gpus_per_node}")
+
+        _, node_list = self.get_cached_nodes_spec()
+        if node_list:
+            nodelist_str = ",".join(node_list)
+            additional_slurm_params.append(f"nodelist={nodelist_str}")
+        elif self.test_run.exclude_nodes:
+            additional_slurm_params.append(f"exclude={','.join(self.test_run.exclude_nodes)}")
+
+        for source in (self.system.extra_srun_args, self.test_run.extra_srun_args):
+            if source:
+                additional_slurm_params.extend(self._parse_srun_args_as_slurm_params(source))
+
+        if additional_slurm_params:
+            parts.extend(["--additional_slurm_params", shlex.quote(";".join(additional_slurm_params))])
+
+        # Config variant
+        add_field("config_variant", "-cv", args.config_variant)
+        if args.list_config_variants and "list_config_variants" in fields_set:
+            parts.append("--list_config_variants")
 
         # Extra user args (dict -> string)
         if tdef.extra_cmd_args:

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,20 +32,7 @@ from .runai_training import ActualPhase, RunAITraining
 
 
 class RunAISystem(System):
-    """
-    RunAISystem integrates with the RunAI platform to manage and monitor jobs and nodes.
-
-    Attributes:
-        name (str): The name of the RunAI system.
-        install_path (Path): The installation path for RunAI.
-        output_path (Path): The path where output is stored.
-        base_url (str): The base URL for the RunAI API.
-        app_id (str): The application ID for authentication.
-        app_secret (str): The application secret for authentication.
-        scheduler (str): The scheduler type, default is "runai".
-        global_env_vars (Dict[str, Any]): Global environment variables to be passed to jobs.
-        nodes (List[RunAINode]): List of nodes in the RunAI cluster.
-    """
+    """RunAISystem integrates with the RunAI platform to manage and monitor jobs and nodes."""
 
     scheduler: str = "runai"
     monitor_interval: int = 60
@@ -174,7 +161,7 @@ class RunAISystem(System):
         self.api_client.resume_training(workload_id)
 
     # ============================ Logs ============================
-    async def store_logs(self, workload_id: str, output_file_path: Path):
+    def store_logs(self, workload_id: str, output_file_path: Path):
         """Store logs for a given workload."""
         training_data = self.api_client.get_training(workload_id)
         training = RunAITraining(**training_data)
@@ -202,4 +189,4 @@ class RunAISystem(System):
             logging.error(f"Domain for cluster {cluster_id} not found.")
             return
 
-        await self.api_client.fetch_training_logs(cluster_domain, project.name, training.name, output_file_path)
+        self.api_client.fetch_training_logs(cluster_domain, project.name, training.name, output_file_path)

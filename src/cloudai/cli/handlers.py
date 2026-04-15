@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import argparse
-import asyncio
 import copy
 import logging
 import signal
@@ -144,8 +143,18 @@ def handle_dse_job(runner: Runner, args: argparse.Namespace) -> int:
             err = 1
             continue
 
-        env = CloudAIGymEnv(test_run=test_run, runner=runner.runner)
-        agent = agent_class(env)
+        agent_config_data = test_run.test.agent_config or {}
+        agent_config = agent_class.get_config_class()(**agent_config_data)
+        env = CloudAIGymEnv(
+            test_run=test_run,
+            runner=runner.runner,
+            rewards=agent_config.rewards,
+        )
+        if agent_config.start_action == "first":
+            logging.info(f"Using deterministic first sweep for the chosen agent: {env.first_sweep}.")
+
+        agent = agent_class(env, agent_config)
+
         for step in range(agent.max_steps):
             result = agent.select_action()
             if result is None:
@@ -192,7 +201,7 @@ def generate_reports(system: System, test_scenario: TestScenario, result_dir: Pa
 
 
 def handle_non_dse_job(runner: Runner, args: argparse.Namespace) -> None:
-    asyncio.run(runner.run())
+    runner.run()
     generate_reports(runner.runner.system, runner.runner.test_scenario, runner.runner.scenario_root)
     logging.info("All jobs are complete.")
 
@@ -211,13 +220,13 @@ def register_signal_handlers(signal_handler: Callable) -> None:
 
 def _setup_system_and_scenario(
     args: argparse.Namespace,
-) -> tuple[System | None, TestScenario | None, list[TestDefinition] | None]:
+) -> tuple[System, TestScenario, list[TestDefinition]] | None:
     parser = Parser(args.system_config)
     try:
         system, tests, test_scenario = parser.parse(args.tests_dir, args.test_scenario)
     except MissingTestError as e:
         logging.error(e.message)
-        return None, None, None
+        return None
 
     assert test_scenario is not None
 
@@ -225,7 +234,7 @@ def _setup_system_and_scenario(
         system.output_path = args.output_dir.absolute()
 
     if not prepare_output_dir(system.output_path):
-        return None, None, None
+        return None
 
     if args.mode == "dry-run":
         system.monitor_interval = 1
@@ -262,13 +271,9 @@ def _check_installation(
 
 def handle_dry_run_and_run(args: argparse.Namespace) -> int:
     setup_result = _setup_system_and_scenario(args)
-    if setup_result == (None, None, None):
+    if setup_result is None:
         return 1
-
     system, test_scenario, tests = setup_result
-    assert system is not None
-    assert test_scenario is not None
-    assert tests is not None
 
     if not _handle_single_sbatch(args, system):
         return 1
@@ -552,16 +557,16 @@ def handle_list_registered_items(item_type: str, verbose: bool) -> int:
     if item_type.lower() == "reports":
         print("Available scenario reports:")
         for idx, (name, report) in enumerate(sorted(registry.scenario_reports.items()), start=1):
-            str = f'{idx}. "{name}" {report.__name__}'
+            string = f'{idx}. "{name}" {report.__name__}'
             if verbose:
-                str += f" (config={registry.report_configs[name].model_dump_json(indent=None)})"
-            print(str)
+                string += f" (config={registry.report_configs[name].model_dump_json(indent=None)})"
+            print(string)
     elif item_type.lower() == "agents":
         print("Available agents:")
         for idx, (name, agent) in enumerate(sorted(registry.agents_map.items()), start=1):
-            str = f'{idx}. "{name}" class={agent.__name__}'
+            string = f'{idx}. "{name}" class={agent.__name__}'
             if verbose:
-                str += f"{agent.__doc__}"
-            print(str)
+                string += f"{agent.__doc__}"
+            print(string)
 
     return 0
