@@ -118,7 +118,13 @@ class LLMServingCmdArgs(CmdArgs, Generic[LLMServingArgsT]):
 
     docker_image_url: str
     model: str
-    port: int = Field(default=8000, ge=1, le=65535)
+    port: int = Field(default=8300, ge=1, le=65535)
+    host: str = Field(default="0.0.0.0", description="Host/interface for serve or router processes to bind to.")
+    bench_host: str | None = Field(
+        default=None,
+        description="Hostname used by the benchmark client. Defaults to the allocated node hostname.",
+    )
+    healthcheck: str = Field(default="")
     serve_wait_seconds: int = 300
     prefill: LLMServingArgsT | None = Field(default=None)
     decode: LLMServingArgsT
@@ -301,6 +307,10 @@ class LLMServingSlurmCommandGenStrategy(SlurmCommandGenStrategy, Generic[LLMServ
         """Typed access to the workload test definition."""
 
     @property
+    def mpi(self) -> str:
+        return "none"
+
+    @property
     @abstractmethod
     def workload_name(self) -> str:
         """User-facing workload name for diagnostics."""
@@ -363,6 +373,19 @@ class LLMServingSlurmCommandGenStrategy(SlurmCommandGenStrategy, Generic[LLMServ
             return "${DECODE_NODE}"
         raise ValueError(f"Unknown disaggregated role: {role}")
 
+    @property
+    def bind_host(self) -> str:
+        return self.tdef.cmd_args.host
+
+    @property
+    def bench_host(self) -> str:
+        configured_host = self.tdef.cmd_args.bench_host
+        if configured_host:
+            return configured_host
+        if self.is_disaggregated:
+            return "${PREFILL_NODE}"
+        return "${NODE}"
+
     def generate_disaggregated_node_setup(self) -> str:
         if not self.is_disaggregated:
             return ""
@@ -409,13 +432,41 @@ wait_for_health() {{
 }}"""
 
     @staticmethod
-    def generate_cleanup_function(pid_vars: list[str]) -> str:
+    def generate_cleanup_function(pid_vars: list[str], timeout: int = 15) -> str:
+        if len(pid_vars) == 1:
+            pid_var = pid_vars[0]
+            return f"""\
+cleanup() {{
+    echo "Cleaning up PIDs: {pid_var}=${pid_var}"
+    kill -TERM "${pid_var}" 2>/dev/null
+    i=0
+    while kill -0 "${pid_var}" 2>/dev/null; do
+        [ "$i" -ge {timeout} ] && echo "PID did not exit in time" && return 1
+        sleep 1
+        i=$((i+1))
+    done
+}}
+trap cleanup EXIT"""
+
         pid_values = " ".join(f"{pid_var}=${pid_var}" for pid_var in pid_vars)
-        kill_lines = "\n".join(f'    [ -n "${pid_var}" ] && kill -9 ${pid_var} 2>/dev/null' for pid_var in pid_vars)
+        pid_array = " ".join(f'"${p}"' for p in pid_vars)
         return f"""\
 cleanup() {{
     echo "Cleaning up PIDs: {pid_values}"
-{kill_lines}
+
+    for pid in {pid_array}; do
+        [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null
+    done
+
+    for pid in {pid_array}; do
+        [ -z "$pid" ] && continue
+        i=0
+        while kill -0 "$pid" 2>/dev/null; do
+            [ "$i" -ge {timeout} ] && echo "PID $pid did not exit in time" && return 1
+            sleep 1
+            i=$((i+1))
+        done
+    done
 }}
 trap cleanup EXIT"""
 
@@ -509,7 +560,9 @@ trap cleanup EXIT"""
 
     def _gen_srun_command(self) -> str:
         serve_commands = self.get_serve_commands()
-        return self._gen_llm_serving_srun_command(serve_commands)
+        srun_command = self._gen_llm_serving_srun_command(serve_commands)
+        srun_command += "\n\ncleanup\n"
+        return srun_command
 
     def _gen_llm_serving_srun_command(self, serve_commands: list[list[str]]) -> str:
         bench_cmd = " ".join(self.get_bench_command())
@@ -522,7 +575,7 @@ trap cleanup EXIT"""
         serve_cmd_with_env = self._with_env(serve_cmd, self.aggregated_serve_env())
         health_func = self.generate_wait_for_health_function()
         wait_block = self.generate_wait_for_health_block(
-            self.workload_name, [f"http://${{NODE}}:{self.serve_port}/health"]
+            self.workload_name, [f"http://${{NODE}}:{self.serve_port}{self.tdef.cmd_args.healthcheck}"]
         )
         return f"""\
 {self.generate_cleanup_function([self.serve_pid_var])}
@@ -560,6 +613,12 @@ echo "Running benchmark..."
             host_setup="",
             host_display="$PREFILL_NODE and $DECODE_NODE",
         )
+        wait_block_helper = self.generate_wait_for_health_block(
+            self.workload_name,
+            [f"http://{self.disaggregated_role_host('prefill')}:{self.serve_port}{self.tdef.cmd_args.healthcheck}"],
+            host_setup="",
+            host_display="$PREFILL_NODE server",
+        )
         preamble = self.disaggregated_script_preamble()
 
         return f"""\
@@ -586,6 +645,8 @@ echo "Starting {self.proxy_router_name}..."
     --output={self.test_run.output_path.absolute()}/{self.proxy_router_log_file} \\
     {" ".join(helper_cmd)} &
 {self.proxy_router_pid_var}=$!
+
+{wait_block_helper}
 
 echo "Running benchmark..."
 {prefill_srun_prefix} \\

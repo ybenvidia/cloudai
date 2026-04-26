@@ -159,7 +159,7 @@ class TestVllmBenchCommand:
             "bench",
             "serve",
             f"--model {cmd_args.model}",
-            f"--base-url http://127.0.0.1:{cmd_args.port}",
+            f"--base-url http://${{NODE}}:{cmd_args.port}",
             f"--random-input-len {bench_args.random_input_len}",
             f"--random-output-len {bench_args.random_output_len}",
             f"--max-concurrency {bench_args.max_concurrency}",
@@ -193,7 +193,7 @@ class TestVllmAggregatedMode:
         commands = vllm_cmd_gen_strategy.get_serve_commands()
 
         assert len(commands) == 1
-        assert commands[0] == ["vllm", "serve", cmd_args.model, "--port", str(cmd_args.port)]
+        assert commands[0] == ["vllm", "serve", cmd_args.model, "--host", cmd_args.host, "--port", str(cmd_args.port)]
 
     def test_get_vllm_serve_commands_convert_boolean_flags(
         self, vllm: VllmTestDefinition, vllm_tr: TestRun, slurm_system: SlurmSystem
@@ -208,6 +208,8 @@ class TestVllmAggregatedMode:
             "vllm",
             "serve",
             vllm.cmd_args.model,
+            "--host",
+            vllm.cmd_args.host,
             "--enable-expert-parallel",
             "--port",
             str(vllm.cmd_args.port),
@@ -253,7 +255,13 @@ wait_for_health() {{
         expected = f"""\
 cleanup() {{
     echo "Cleaning up PIDs: SERVE_PID=$SERVE_PID"
-    [ -n "$SERVE_PID" ] && kill -9 $SERVE_PID 2>/dev/null
+    kill -TERM "$SERVE_PID" 2>/dev/null
+    i=0
+    while kill -0 "$SERVE_PID" 2>/dev/null; do
+        [ "$i" -ge 15 ] && echo "PID did not exit in time" && return 1
+        sleep 1
+        i=$((i+1))
+    done
 }}
 trap cleanup EXIT
 
@@ -267,12 +275,15 @@ SERVE_PID=$!
 
 NODE=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n 1)
 echo "Waiting for vLLM on $NODE to be ready..."
-wait_for_health "http://${{NODE}}:{cmd_args.port}/health" || exit 1
+wait_for_health "http://${{NODE}}:{cmd_args.port}/healthcheck" || exit 1
 
 echo "Running benchmark..."
 {srun_prefix} --overlap --ntasks-per-node=1 --ntasks=1 \\
     --output={output_path}/{VLLM_BENCH_LOG_FILE} \\
-    {bench_cmd}"""
+    {bench_cmd}
+
+cleanup
+"""
 
         assert srun_command == expected
 
@@ -304,6 +315,8 @@ class TestVllmDisaggregatedMode:
             "vllm",
             "serve",
             cmd_args.model,
+            "--host",
+            cmd_args.host,
             "--port",
             str(cmd_args.port + 100),
             "--kv-transfer-config",
@@ -313,6 +326,8 @@ class TestVllmDisaggregatedMode:
             "vllm",
             "serve",
             cmd_args.model,
+            "--host",
+            cmd_args.host,
             "--port",
             str(cmd_args.port + 200),
             "--kv-transfer-config",
@@ -329,6 +344,8 @@ class TestVllmDisaggregatedMode:
         assert command == [
             "python3",
             cmd_args.proxy_script,
+            "--host",
+            cmd_args.host,
             "--port",
             str(cmd_args.port),
             "--prefiller-hosts",
@@ -369,9 +386,20 @@ class TestVllmDisaggregatedMode:
         expected = f"""\
 cleanup() {{
     echo "Cleaning up PIDs: PREFILL_PID=$PREFILL_PID DECODE_PID=$DECODE_PID HELPER_PID=$HELPER_PID"
-    [ -n "$PREFILL_PID" ] && kill -9 $PREFILL_PID 2>/dev/null
-    [ -n "$DECODE_PID" ] && kill -9 $DECODE_PID 2>/dev/null
-    [ -n "$HELPER_PID" ] && kill -9 $HELPER_PID 2>/dev/null
+
+    for pid in "$PREFILL_PID" "$DECODE_PID" "$HELPER_PID"; do
+        [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null
+    done
+
+    for pid in "$PREFILL_PID" "$DECODE_PID" "$HELPER_PID"; do
+        [ -z "$pid" ] && continue
+        i=0
+        while kill -0 "$pid" 2>/dev/null; do
+            [ "$i" -ge 15 ] && echo "PID $pid did not exit in time" && return 1
+            sleep 1
+            i=$((i+1))
+        done
+    done
 }}
 trap cleanup EXIT
 
@@ -411,10 +439,16 @@ echo "Starting router..."
     {" ".join(helper_cmd)} &
 HELPER_PID=$!
 
+echo "Waiting for vLLM on $PREFILL_NODE server to be ready..."
+wait_for_health "http://${{PREFILL_NODE}}:{cmd_args.port}/healthcheck" || exit 1
+
 echo "Running benchmark..."
 {srun_prefix} --overlap --ntasks-per-node=1 --ntasks=1 \\
     --output={output_path}/{VLLM_BENCH_LOG_FILE} \\
-    {bench_cmd}"""
+    {bench_cmd}
+
+cleanup
+"""
 
         assert srun_command == expected
 
@@ -441,7 +475,7 @@ echo "Running benchmark..."
         assert 'wait_for_health "http://${DECODE_NODE}:8200/health"' in srun_command
         assert "--prefiller-hosts ${PREFILL_NODE}" in srun_command
         assert "--decoder-hosts ${DECODE_NODE}" in srun_command
-        assert "--base-url http://127.0.0.1:8000" in srun_command
+        assert "--base-url http://${PREFILL_NODE}:8000" in srun_command
 
     def test_disagg_more_than_two_nodes_is_rejected(self, vllm_disagg_tr: TestRun, slurm_system: SlurmSystem) -> None:
         vllm_disagg_tr.num_nodes = 3
