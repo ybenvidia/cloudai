@@ -18,7 +18,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -34,7 +34,7 @@ class InstallContext:
     system: "System"
     install_dir: Path
     hf_home_dir: Path
-    capabilities: Mapping[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
     def capability(self, name: str, default: Any = None) -> Any:
         """Return a named installer capability, if one was provided."""
