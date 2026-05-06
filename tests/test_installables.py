@@ -20,12 +20,73 @@ from unittest.mock import patch
 
 import pytest
 
-from cloudai.core import GitRepo
+from cloudai.core import GitRepo, Installable, InstallContext, InstallStatusResult
 
 
 @pytest.fixture
 def git() -> GitRepo:
     return GitRepo(url="./git_url", commit="commit_hash")
+
+
+class CustomInstallable(Installable):
+    def __init__(self):
+        self.context = None
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CustomInstallable)
+
+    def __hash__(self) -> int:
+        return hash("CustomInstallable")
+
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        self.context = context
+        return InstallStatusResult(True, "custom installed")
+
+
+def test_install_context_exposes_system_paths_and_capabilities(slurm_system):
+    helper = object()
+    context = InstallContext(
+        system=slurm_system,
+        install_dir=slurm_system.install_path,
+        hf_home_dir=slurm_system.hf_home_path,
+        capabilities={"helper": helper},
+    )
+
+    assert context.system is slurm_system
+    assert context.install_dir == slurm_system.install_path
+    assert context.hf_home_dir == slurm_system.hf_home_path
+    assert context.capability("helper") is helper
+    assert context.capability("missing", "default") == "default"
+
+
+def test_default_installable_operations_return_unsupported(slurm_system):
+    item = CustomInstallable()
+    context = InstallContext(
+        system=slurm_system,
+        install_dir=slurm_system.install_path,
+        hf_home_dir=slurm_system.hf_home_path,
+    )
+
+    for operation in [item.uninstall, item.is_installed, item.mark_as_installed]:
+        result = operation(context)
+        assert not result.success
+        assert "Unsupported installable operation" in result.message
+        assert type(item).__name__ in result.message
+
+
+def test_custom_installable_can_implement_install_api(slurm_system):
+    item = CustomInstallable()
+    context = InstallContext(
+        system=slurm_system,
+        install_dir=slurm_system.install_path,
+        hf_home_dir=slurm_system.hf_home_path,
+    )
+
+    result = item.install(context)
+
+    assert result.success
+    assert result.message == "custom installed"
+    assert item.context is context
 
 
 class TestGitRepoSubmodules:

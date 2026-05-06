@@ -18,9 +18,27 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from .install_status_result import InstallStatusResult
+    from .system import System
+
+
+@dataclass(frozen=True)
+class InstallContext:
+    """Context passed to installables when performing installation operations."""
+
+    system: "System"
+    install_dir: Path
+    hf_home_dir: Path
+    capabilities: Mapping[str, Any] = field(default_factory=dict)
+
+    def capability(self, name: str, default: Any = None) -> Any:
+        """Return a named installer capability, if one was provided."""
+        return self.capabilities.get(name, default)
 
 
 class Installable(ABC):
@@ -31,6 +49,26 @@ class Installable(ABC):
 
     @abstractmethod
     def __hash__(self) -> int: ...
+
+    def _unsupported_result(self, operation: str) -> "InstallStatusResult":
+        from .install_status_result import InstallStatusResult
+
+        return InstallStatusResult(
+            False,
+            f"Unsupported installable operation '{operation}' for item type: {type(self)}",
+        )
+
+    def install(self, context: InstallContext) -> "InstallStatusResult":
+        return self._unsupported_result("install")
+
+    def uninstall(self, context: InstallContext) -> "InstallStatusResult":
+        return self._unsupported_result("uninstall")
+
+    def is_installed(self, context: InstallContext) -> "InstallStatusResult":
+        return self._unsupported_result("is_installed")
+
+    def mark_as_installed(self, context: InstallContext) -> "InstallStatusResult":
+        return self._unsupported_result("mark_as_installed")
 
 
 @dataclass
