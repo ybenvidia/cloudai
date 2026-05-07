@@ -20,12 +20,12 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Iterable, Optional, final
+from typing import Any, Iterable, Optional, final
 
 from cloudai.util import prepare_output_dir
 
 from .install_status_result import InstallStatusResult
-from .installables import Installable
+from .installables import Installable, InstallContext
 from .system import System
 
 TASK_LIMIT_THRESHOLD = 256
@@ -127,6 +127,43 @@ class BaseInstaller(ABC):
         all_items = list(items) + self.system.system_installables()
         return list(set(all_items)) if not with_duplicates else all_items
 
+    @property
+    def install_capabilities(self) -> dict[str, Any]:
+        return {}
+
+    @property
+    def install_context(self) -> InstallContext:
+        return InstallContext(
+            install_dir=self.system.install_path,
+            hf_home_dir=self.system.hf_home_path,
+            capabilities=self.install_capabilities,
+        )
+
+    def _uses_installable_operation(self, item: Installable, operation: str) -> bool:
+        return getattr(type(item), operation) is not getattr(Installable, operation)
+
+    def _run_installable_operation(
+        self,
+        item: Installable,
+        operation: str,
+        fallback,
+    ) -> InstallStatusResult:
+        if self._uses_installable_operation(item, operation):
+            return getattr(item, operation)(self.install_context)
+        return fallback(item)
+
+    def _install_item(self, item: Installable) -> InstallStatusResult:
+        return self._run_installable_operation(item, "install", self.install_one)
+
+    def _uninstall_item(self, item: Installable) -> InstallStatusResult:
+        return self._run_installable_operation(item, "uninstall", self.uninstall_one)
+
+    def _is_item_installed(self, item: Installable) -> InstallStatusResult:
+        return self._run_installable_operation(item, "is_installed", self.is_installed_one)
+
+    def _mark_item_as_installed(self, item: Installable) -> InstallStatusResult:
+        return self._run_installable_operation(item, "mark_as_installed", self.mark_as_installed_one)
+
     @final
     def is_installed(self, items: Iterable[Installable]) -> InstallStatusResult:
         """
@@ -151,7 +188,7 @@ class BaseInstaller(ABC):
         install_results: dict[Installable, InstallStatusResult] = {}
         for item in self.all_items(items):
             logging.debug(f"Installation check for {item!r}")
-            result = self.is_installed_one(item)
+            result = self._is_item_installed(item)
             logging.debug(f"Installation check for {item!r}: {result.success}, {result.message}")
             install_results[item] = result
 
@@ -195,7 +232,7 @@ class BaseInstaller(ABC):
 
         install_results: dict[Installable, InstallStatusResult] = {}
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            futures = {executor.submit(self.install_one, item): item for item in self.all_items(items)}
+            futures = {executor.submit(self._install_item, item): item for item in self.all_items(items)}
             total, done = len(futures), 0
             for future in as_completed(futures):
                 item = futures[future]
@@ -228,25 +265,16 @@ class BaseInstaller(ABC):
         for item in self.all_items(items, with_duplicates=True):
             if item not in install_results or not install_results[item].success:
                 continue
-            self.mark_as_installed_one(item)
+            self._mark_item_as_installed(item)
 
     @final
     def uninstall(self, items: Iterable[Installable]) -> InstallStatusResult:
-        """
-        Uninstall installable items.
-
-        Args:
-            items (Iterable[Installable]): Items to uninstall.
-
-        Returns:
-            InstallStatusResult: Result containing the uninstallation status and error message if any.
-        """
         logging.debug(f"Going to uninstall {len(set(items))} uniq items (total {len(list(items))}).")
         logging.info(f"Going to uninstall {len(set(items))} items.")
 
         uninstall_results: dict[Installable, InstallStatusResult] = {}
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            futures = {executor.submit(self.uninstall_one, item): item for item in self.all_items(items)}
+            futures = {executor.submit(self._uninstall_item, item): item for item in self.all_items(items)}
             for future in as_completed(futures):
                 item = futures[future]
                 try:
@@ -265,18 +293,9 @@ class BaseInstaller(ABC):
 
     @final
     def mark_as_installed(self, items: Iterable[Installable]) -> InstallStatusResult:
-        """
-        Mark the installable items as installed.
-
-        Args:
-            items (Iterable[Installable]): Items to mark as installed.
-
-        Returns:
-            InstallStatusResult: Result containing the status and error message if any.
-        """
         install_results: dict[Installable, InstallStatusResult] = {}
         for item in self.all_items(items):
-            result = self.mark_as_installed_one(item)
+            result = self._mark_item_as_installed(item)
             install_results[item] = result
 
         self._populate_successful_install(items, install_results)

@@ -24,14 +24,12 @@ from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from .install_status_result import InstallStatusResult
-    from .system import System
 
 
 @dataclass(frozen=True)
 class InstallContext:
     """Context passed to installables when performing installation operations."""
 
-    system: "System"
     install_dir: Path
     hf_home_dir: Path
     capabilities: dict[str, Any] = field(default_factory=dict)

@@ -29,6 +29,7 @@ from cloudai.core import (
     GitRepo,
     HFModel,
     Installable,
+    InstallContext,
     InstallStatusResult,
     PythonExecutable,
 )
@@ -36,6 +37,7 @@ from cloudai.systems.kubernetes.kubernetes_installer import KubernetesInstaller
 from cloudai.systems.kubernetes.kubernetes_system import KubernetesSystem
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 from cloudai.systems.slurm.docker_image_cache_manager import DockerImageCacheResult
+from cloudai.systems.standalone.standalone_installer import StandaloneInstaller
 from cloudai.util import prepare_output_dir
 
 
@@ -360,6 +362,33 @@ class MyInstallable(Installable):
         return hash("MyInstallable")
 
 
+class CustomInstallable(Installable):
+    def __init__(self):
+        self.calls: list[tuple[str, InstallContext]] = []
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CustomInstallable)
+
+    def __hash__(self) -> int:
+        return hash("CustomInstallable")
+
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        self.calls.append(("install", context))
+        return InstallStatusResult(True, "custom installed")
+
+    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+        self.calls.append(("uninstall", context))
+        return InstallStatusResult(True, "custom uninstalled")
+
+    def is_installed(self, context: InstallContext) -> InstallStatusResult:
+        self.calls.append(("is_installed", context))
+        return InstallStatusResult(True, "custom is installed")
+
+    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
+        self.calls.append(("mark_as_installed", context))
+        return InstallStatusResult(True, "custom marked as installed")
+
+
 def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
     unsupported = MyInstallable()
     for func in [
@@ -371,3 +400,31 @@ def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
         res = func(unsupported)
         assert not res.success
         assert res.message == f"Unsupported item type: {type(unsupported)}"
+
+
+def test_custom_installable_is_dispatched_without_system_installer_support(standalone_system):
+    installer = StandaloneInstaller(standalone_system)
+    installer._check_prerequisites = Mock(return_value=InstallStatusResult(True))
+    item = CustomInstallable()
+    installer.install_one = Mock(return_value=InstallStatusResult(False, "fallback install"))
+    installer.uninstall_one = Mock(return_value=InstallStatusResult(False, "fallback uninstall"))
+    installer.is_installed_one = Mock(return_value=InstallStatusResult(False, "fallback status"))
+    installer.mark_as_installed_one = Mock(return_value=InstallStatusResult(False, "fallback mark"))
+
+    install_result = installer.install([item])
+    is_installed_result = installer.is_installed([item])
+    uninstall_result = installer.uninstall([item])
+    mark_result = installer.mark_as_installed([item])
+
+    assert install_result.success
+    assert is_installed_result.success
+    assert uninstall_result.success
+    assert mark_result.success
+    assert ("install", installer.install_context) in item.calls
+    assert ("is_installed", installer.install_context) in item.calls
+    assert ("uninstall", installer.install_context) in item.calls
+    assert ("mark_as_installed", installer.install_context) in item.calls
+    installer.install_one.assert_not_called()
+    installer.uninstall_one.assert_not_called()
+    installer.is_installed_one.assert_not_called()
+    installer.mark_as_installed_one.assert_not_called()
