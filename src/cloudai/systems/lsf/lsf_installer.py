@@ -14,7 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from cloudai.core import BaseInstaller, Installable, InstallStatusResult
+import logging
+
+from cloudai.core import BaseInstaller, DockerImage, Installable, InstallStatusResult
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 
 from .lsf_system import LSFSystem
@@ -54,13 +56,25 @@ class LSFInstaller(BaseInstaller):
                 raise EnvironmentError(f"Required binary '{binary}' is not installed.")
 
     def install_one(self, item: Installable) -> InstallStatusResult:
+        if self.is_installable_type(item, DockerImage):
+            logging.info(f"Skipping installation of Docker image {item} in LSF system.")
+            return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
         return self.slurm_installer.install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
+        if self.is_installable_type(item, DockerImage):
+            logging.info(f"Skipping uninstallation of Docker image {item} in LSF system.")
+            return InstallStatusResult(True, "Docker image uninstallation skipped for LSF system.")
         return self.slurm_installer.uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
+        if self.is_installable_type(item, DockerImage):
+            logging.info(f"Skipping installation of Docker image {item} in LSF system.")
+            return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
         return self.slurm_installer.is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
+        if self.is_installable_type(item, DockerImage):
+            logging.info(f"Skipping installation of Docker image {item} in LSF system.")
+            return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
         return self.slurm_installer.mark_as_installed_one(item)

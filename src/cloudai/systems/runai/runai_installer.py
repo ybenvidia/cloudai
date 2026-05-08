@@ -40,34 +40,34 @@ class RunAIInstaller(BaseInstaller):
         return InstallStatusResult(True)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             logging.info(f"Installing {item} for RunAI.")
             return InstallStatusResult(True)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             return self.hf_model_manager.download_model(item)
         return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             logging.info(f"Uninstalling {item} for RunAI.")
             return InstallStatusResult(True)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             return self.hf_model_manager.remove_model(item)
         return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             logging.info(f"Checking if {item} is installed for RunAI.")
             return InstallStatusResult(True)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             return self.hf_model_manager.is_model_downloaded(item)
         return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             logging.info(f"Marking {item} as installed for RunAI.")
             return InstallStatusResult(True)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
         return super().mark_as_installed_one(item)
