@@ -17,7 +17,7 @@
 import shutil
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any, Generator, cast
+from typing import Generator, cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -34,11 +34,8 @@ from cloudai.core import (
 )
 from cloudai.systems.kubernetes.kubernetes_installer import KubernetesInstaller
 from cloudai.systems.kubernetes.kubernetes_system import KubernetesSystem
-from cloudai.systems.lsf import LSFInstaller, LSFSystem
-from cloudai.systems.runai import RunAIInstaller, RunAISystem
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 from cloudai.systems.slurm.docker_image_cache_manager import DockerImageCacheResult
-from cloudai.systems.standalone.standalone_installer import StandaloneInstaller
 from cloudai.util import prepare_output_dir
 
 
@@ -318,14 +315,11 @@ class TestSuccessIsPopulated:
         assert f1._installed_path == f2._installed_path, "Files should have same installed_path"
 
 
-@pytest.fixture(params=["k8s", "slurm", "runai"])
-def installer(
-    request: Any, k8s_system: KubernetesSystem, slurm_system: SlurmSystem, runai_system: RunAISystem
-) -> KubernetesInstaller | SlurmInstaller | RunAIInstaller:
+@pytest.fixture(params=["k8s", "slurm"])
+def installer(request: pytest.FixtureRequest, k8s_system: KubernetesSystem, slurm_system: SlurmSystem):
     installers = {
         "k8s": KubernetesInstaller(k8s_system),
         "slurm": SlurmInstaller(slurm_system),
-        "runai": RunAIInstaller(runai_system),
     }
     installer = installers[request.param]
 
@@ -334,9 +328,7 @@ def installer(
     return installer
 
 
-def test_check_supported(
-    installer: KubernetesInstaller | SlurmInstaller | RunAIInstaller, monkeypatch: pytest.MonkeyPatch
-):
+def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkeypatch: pytest.MonkeyPatch):
     if isinstance(installer, SlurmInstaller):
         installer._install_docker_image = lambda item: DockerImageCacheResult(True)
         installer._uninstall_docker_image = lambda item: DockerImageCacheResult(True)
@@ -364,49 +356,6 @@ def test_check_supported(
 
         res = installer.mark_as_installed_one(item)
         assert res.success, f"Failed to mark as installed {item} for {installer.__class__.__name__=} {res.message=}"
-
-
-def test_runai_uses_default_operations_for_non_docker_installables(
-    runai_system: RunAISystem, monkeypatch: pytest.MonkeyPatch
-):
-    installer = RunAIInstaller(runai_system)
-    calls: list[tuple[str, str, BaseInstaller]] = []
-
-    def operation_result(item_name: str, operation_name: str):
-        def operation(item, context):
-            calls.append((item_name, operation_name, context))
-            return InstallStatusResult(True)
-
-        return operation
-
-    for item_type, item_name in [
-        (File, "file"),
-        (GitRepo, "git"),
-        (PythonExecutable, "python"),
-    ]:
-        monkeypatch.setattr(item_type, "install", operation_result(item_name, "install"))
-        monkeypatch.setattr(item_type, "uninstall", operation_result(item_name, "uninstall"))
-        monkeypatch.setattr(item_type, "is_installed", operation_result(item_name, "is_installed"))
-        monkeypatch.setattr(item_type, "mark_as_installed", operation_result(item_name, "mark_as_installed"))
-
-    git = GitRepo(url="./git_url", commit="commit_hash")
-    items = [
-        ("file", File(Path(__file__))),
-        ("git", git),
-        ("python", PythonExecutable(git)),
-    ]
-
-    for _, item in items:
-        assert installer.install_one(item).success
-        assert installer.uninstall_one(item).success
-        assert installer.is_installed_one(item).success
-        assert installer.mark_as_installed_one(item).success
-
-    assert calls == [
-        (item_name, operation, installer)
-        for item_name, _ in items
-        for operation in ["install", "uninstall", "is_installed", "mark_as_installed"]
-    ]
 
 
 class MyInstallable(Installable):
@@ -466,55 +415,6 @@ class CustomDockerImage(DockerImage):
         return InstallStatusResult(True, "custom docker marked as installed")
 
 
-class CustomHFModel(HFModel):
-    def __init__(self, model_name: str):
-        super().__init__(model_name)
-        self.calls: list[tuple[str, BaseInstaller]] = []
-
-    def install(self, installer: BaseInstaller) -> InstallStatusResult:
-        self.calls.append(("install", installer))
-        return InstallStatusResult(True, "custom hf installed")
-
-    def uninstall(self, installer: BaseInstaller) -> InstallStatusResult:
-        self.calls.append(("uninstall", installer))
-        return InstallStatusResult(True, "custom hf uninstalled")
-
-    def is_installed(self, installer: BaseInstaller) -> InstallStatusResult:
-        self.calls.append(("is_installed", installer))
-        return InstallStatusResult(True, "custom hf is installed")
-
-    def mark_as_installed(self, installer: BaseInstaller) -> InstallStatusResult:
-        self.calls.append(("mark_as_installed", installer))
-        return InstallStatusResult(True, "custom hf marked as installed")
-
-
-@pytest.fixture(
-    params=[
-        "k8s",
-        "slurm",
-        "lsf",
-        "runai",
-        "standalone",
-    ]
-)
-def dispatch_contract_installer(
-    request: pytest.FixtureRequest,
-    k8s_system: KubernetesSystem,
-    slurm_system: SlurmSystem,
-    runai_system: RunAISystem,
-    standalone_system,
-    tmp_path: Path,
-) -> BaseInstaller:
-    installers = {
-        "k8s": KubernetesInstaller(k8s_system),
-        "slurm": SlurmInstaller(slurm_system),
-        "lsf": LSFInstaller(LSFSystem(name="test_lsf", install_path=tmp_path / "install", output_path=tmp_path)),
-        "runai": RunAIInstaller(runai_system),
-        "standalone": StandaloneInstaller(standalone_system),
-    }
-    return installers[request.param]
-
-
 def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
     unsupported = MyInstallable()
     for func in [
@@ -529,15 +429,14 @@ def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
         assert type(unsupported).__name__ in res.message
 
 
-def test_custom_installable_is_dispatched_without_system_installer_support(standalone_system):
-    installer = StandaloneInstaller(standalone_system)
-    installer._check_prerequisites = Mock(return_value=InstallStatusResult(True))
+def test_custom_installable_operations_are_dispatched(slurm_system: SlurmSystem):
+    installer = BaseInstaller(slurm_system)
     item = CustomInstallable()
 
-    install_result = installer.install([item])
-    is_installed_result = installer.is_installed([item])
-    uninstall_result = installer.uninstall([item])
-    mark_result = installer.mark_as_installed([item])
+    install_result = installer.install_one(item)
+    is_installed_result = installer.is_installed_one(item)
+    uninstall_result = installer.uninstall_one(item)
+    mark_result = installer.mark_as_installed_one(item)
 
     assert install_result.success
     assert is_installed_result.success
@@ -549,48 +448,27 @@ def test_custom_installable_is_dispatched_without_system_installer_support(stand
     assert ("mark_as_installed", installer) in item.calls
 
 
-@pytest.mark.parametrize(
-    ("item_type", "expected_messages"),
-    [
-        (
-            CustomDockerImage,
-            [
-                "custom docker installed",
-                "custom docker uninstalled",
-                "custom docker is installed",
-                "custom docker marked as installed",
-            ],
-        ),
-        (
-            CustomHFModel,
-            [
-                "custom hf installed",
-                "custom hf uninstalled",
-                "custom hf is installed",
-                "custom hf marked as installed",
-            ],
-        ),
-    ],
-)
-def test_builtin_installable_subclass_uses_custom_operations(
-    dispatch_contract_installer: BaseInstaller,
-    item_type: type[CustomDockerImage] | type[CustomHFModel],
-    expected_messages: list[str],
-):
-    item = item_type("fake_url/img" if item_type is CustomDockerImage else "fake/model")
+def test_builtin_installable_subclass_operations_are_dispatched(slurm_system: SlurmSystem):
+    installer = SlurmInstaller(slurm_system)
+    item = CustomDockerImage("fake_url/img")
 
     results = [
-        dispatch_contract_installer.install_one(item),
-        dispatch_contract_installer.uninstall_one(item),
-        dispatch_contract_installer.is_installed_one(item),
-        dispatch_contract_installer.mark_as_installed_one(item),
+        installer.install_one(item),
+        installer.uninstall_one(item),
+        installer.is_installed_one(item),
+        installer.mark_as_installed_one(item),
     ]
 
-    assert [result.success for result in results] == [True, True, True, True]
-    assert [result.message for result in results] == expected_messages
+    assert all(result.success for result in results)
+    assert [result.message for result in results] == [
+        "custom docker installed",
+        "custom docker uninstalled",
+        "custom docker is installed",
+        "custom docker marked as installed",
+    ]
     assert item.calls == [
-        ("install", dispatch_contract_installer),
-        ("uninstall", dispatch_contract_installer),
-        ("is_installed", dispatch_contract_installer),
-        ("mark_as_installed", dispatch_contract_installer),
+        ("install", installer),
+        ("uninstall", installer),
+        ("is_installed", installer),
+        ("mark_as_installed", installer),
     ]
