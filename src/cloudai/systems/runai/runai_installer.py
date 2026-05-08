@@ -19,13 +19,11 @@ import logging
 from cloudai.core import (
     BaseInstaller,
     DockerImage,
-    File,
-    GitRepo,
     HFModel,
     Installable,
     InstallStatusResult,
-    PythonExecutable,
 )
+from cloudai.util.hf_model_manager import HFModelManager
 
 from .runai_system import RunAISystem
 
@@ -33,35 +31,43 @@ from .runai_system import RunAISystem
 class RunAIInstaller(BaseInstaller):
     """Installer for RunAI systems."""
 
-    NOOP_INSTALLABLES = (DockerImage, File, GitRepo, HFModel, PythonExecutable)
-
     def __init__(self, system: RunAISystem):
         super().__init__(system)
+        self.hf_model_manager = HFModelManager(system.hf_home_path)
 
     def _check_prerequisites(self) -> InstallStatusResult:
         logging.info("Checking prerequisites for RunAI installation.")
         return InstallStatusResult(True)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) in self.NOOP_INSTALLABLES:
+        if type(item) is DockerImage:
             logging.info(f"Installing {item} for RunAI.")
             return InstallStatusResult(True)
+        elif type(item) is HFModel:
+            return self.hf_model_manager.download_model(item)
         return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) in self.NOOP_INSTALLABLES:
+        if type(item) is DockerImage:
             logging.info(f"Uninstalling {item} for RunAI.")
             return InstallStatusResult(True)
+        elif type(item) is HFModel:
+            return self.hf_model_manager.remove_model(item)
         return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) in self.NOOP_INSTALLABLES:
+        if type(item) is DockerImage:
             logging.info(f"Checking if {item} is installed for RunAI.")
             return InstallStatusResult(True)
+        elif type(item) is HFModel:
+            return self.hf_model_manager.is_model_downloaded(item)
         return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) in self.NOOP_INSTALLABLES:
+        if type(item) is DockerImage:
             logging.info(f"Marking {item} as installed for RunAI.")
+            return InstallStatusResult(True)
+        elif type(item) is HFModel:
+            item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
         return super().mark_as_installed_one(item)

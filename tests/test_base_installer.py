@@ -318,18 +318,25 @@ class TestSuccessIsPopulated:
         assert f1._installed_path == f2._installed_path, "Files should have same installed_path"
 
 
-@pytest.fixture(params=["k8s", "slurm"])
+@pytest.fixture(params=["k8s", "slurm", "runai"])
 def installer(
-    request: Any, k8s_system: KubernetesSystem, slurm_system: SlurmSystem
-) -> KubernetesInstaller | SlurmInstaller:
-    installer = KubernetesInstaller(k8s_system) if request.param == "k8s" else SlurmInstaller(slurm_system)
+    request: Any, k8s_system: KubernetesSystem, slurm_system: SlurmSystem, runai_system: RunAISystem
+) -> KubernetesInstaller | SlurmInstaller | RunAIInstaller:
+    installers = {
+        "k8s": KubernetesInstaller(k8s_system),
+        "slurm": SlurmInstaller(slurm_system),
+        "runai": RunAIInstaller(runai_system),
+    }
+    installer = installers[request.param]
 
     installer.system.install_path.mkdir(parents=True)
     installer._check_low_thread_environment = lambda threshold=None: False
     return installer
 
 
-def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkeypatch: pytest.MonkeyPatch):
+def test_check_supported(
+    installer: KubernetesInstaller | SlurmInstaller | RunAIInstaller, monkeypatch: pytest.MonkeyPatch
+):
     if isinstance(installer, SlurmInstaller):
         installer._install_docker_image = lambda item: DockerImageCacheResult(True)
         installer._uninstall_docker_image = lambda item: DockerImageCacheResult(True)
@@ -339,6 +346,9 @@ def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkey
     monkeypatch.setattr(PythonExecutable, "is_installed", lambda item, context: InstallStatusResult(True))
     monkeypatch.setattr(PythonExecutable, "mark_as_installed", lambda item, context: InstallStatusResult(True))
     installer.hf_model_manager = Mock()
+    installer.hf_model_manager.download_model.return_value = InstallStatusResult(True)
+    installer.hf_model_manager.remove_model.return_value = InstallStatusResult(True)
+    installer.hf_model_manager.is_model_downloaded.return_value = InstallStatusResult(True)
 
     git = GitRepo(url="./git_url", commit="commit_hash")
     items = [DockerImage("fake_url/img"), PythonExecutable(git), HFModel("model_name"), File(Path(__file__))]
@@ -354,6 +364,49 @@ def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkey
 
         res = installer.mark_as_installed_one(item)
         assert res.success, f"Failed to mark as installed {item} for {installer.__class__.__name__=} {res.message=}"
+
+
+def test_runai_uses_default_operations_for_non_docker_installables(
+    runai_system: RunAISystem, monkeypatch: pytest.MonkeyPatch
+):
+    installer = RunAIInstaller(runai_system)
+    calls: list[tuple[str, str, BaseInstaller]] = []
+
+    def operation_result(item_name: str, operation_name: str):
+        def operation(item, context):
+            calls.append((item_name, operation_name, context))
+            return InstallStatusResult(True)
+
+        return operation
+
+    for item_type, item_name in [
+        (File, "file"),
+        (GitRepo, "git"),
+        (PythonExecutable, "python"),
+    ]:
+        monkeypatch.setattr(item_type, "install", operation_result(item_name, "install"))
+        monkeypatch.setattr(item_type, "uninstall", operation_result(item_name, "uninstall"))
+        monkeypatch.setattr(item_type, "is_installed", operation_result(item_name, "is_installed"))
+        monkeypatch.setattr(item_type, "mark_as_installed", operation_result(item_name, "mark_as_installed"))
+
+    git = GitRepo(url="./git_url", commit="commit_hash")
+    items = [
+        ("file", File(Path(__file__))),
+        ("git", git),
+        ("python", PythonExecutable(git)),
+    ]
+
+    for _, item in items:
+        assert installer.install_one(item).success
+        assert installer.uninstall_one(item).success
+        assert installer.is_installed_one(item).success
+        assert installer.mark_as_installed_one(item).success
+
+    assert calls == [
+        (item_name, operation, installer)
+        for item_name, _ in items
+        for operation in ["install", "uninstall", "is_installed", "mark_as_installed"]
+    ]
 
 
 class MyInstallable(Installable):

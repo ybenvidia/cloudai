@@ -20,7 +20,6 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from shutil import rmtree
 from typing import TYPE_CHECKING, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
@@ -234,7 +233,7 @@ class GitRepo(Installable, BaseModel):
             return InstallStatusResult(True, f"Repository {self.url} is not cloned.")
 
         logging.debug(f"Removing folder {repo_path}")
-        rmtree(repo_path)
+        shutil.rmtree(repo_path)
         self.installed_path = None
 
         return InstallStatusResult(True)
@@ -267,14 +266,14 @@ class GitRepo(Installable, BaseModel):
         if not res.success:
             logging.error(f"Checkout failed, removing cloned repository at {repo_path}")
             if repo_path.exists():
-                rmtree(repo_path)
+                shutil.rmtree(repo_path)
             return res
 
         submodules_res, submodules_msg = self.ensure_submodules_state(repo_path)
         if not submodules_res:
             logging.error(f"Submodule setup failed with `{submodules_msg}`, removing cloned repository at {repo_path}")
             if repo_path.exists():
-                rmtree(repo_path)
+                shutil.rmtree(repo_path)
             return InstallStatusResult(False, submodules_msg)
 
         return InstallStatusResult(True)
@@ -393,7 +392,7 @@ class PythonExecutable(Installable):
             return InstallStatusResult(True, f"Virtual environment {self.venv_name} is not created.")
 
         logging.debug(f"Removing folder {venv_path}")
-        rmtree(venv_path)
+        shutil.rmtree(venv_path)
         self.venv_path = None
 
         return InstallStatusResult(True)
@@ -434,7 +433,7 @@ class PythonExecutable(Installable):
         logging.debug(f"venv creation STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
         if result.returncode != 0:
             if venv_path.exists():
-                rmtree(venv_path)
+                shutil.rmtree(venv_path)
             return InstallStatusResult(
                 False, f"Failed to create venv:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
             )
@@ -442,7 +441,7 @@ class PythonExecutable(Installable):
         res = self._install_dependencies(installer)
         if not res.success:
             if venv_path.exists():
-                rmtree(venv_path)
+                shutil.rmtree(venv_path)
             return res
 
         self.venv_path = installer.system.install_path / self.venv_name
