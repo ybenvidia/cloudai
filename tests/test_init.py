@@ -19,7 +19,7 @@ from cloudai.core import Registry
 from cloudai.reporter import DSEReporter, PerTestReporter, StatusReporter, TarballReporter
 from cloudai.systems.kubernetes import KubernetesSystem
 from cloudai.systems.lsf import LSFInstaller, LSFSystem
-from cloudai.systems.runai import RunAIInstaller, RunAISystem
+from cloudai.systems.runai import RunAISystem
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 from cloudai.systems.standalone import StandaloneInstaller, StandaloneSystem
 from cloudai.workloads.ai_dynamo import (
@@ -222,7 +222,6 @@ def test_installers():
     assert installers["standalone"] == StandaloneInstaller
     assert installers["slurm"] == SlurmInstaller
     assert installers["lsf"] == LSFInstaller
-    assert installers["runai"] == RunAIInstaller
 
 
 def test_definitions():

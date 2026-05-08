@@ -19,14 +19,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from cloudai.core import (
-    BaseInstaller,
-    DockerImage,
-    HFModel,
-    Installable,
-    InstallStatusResult,
-)
-from cloudai.util.hf_model_manager import HFModelManager
+from cloudai.core import BaseInstaller, DockerImage, HFModel, Installable, InstallStatusResult
 
 from .docker_image_cache_manager import DockerImageCacheManager, DockerImageCacheResult
 from .slurm_system import SlurmSystem
@@ -48,7 +41,6 @@ class SlurmInstaller(BaseInstaller):
         super().__init__(system)
         self.system = system
         self.docker_image_cache_manager = DockerImageCacheManager(system)
-        self.hf_model_manager = HFModelManager(system.hf_home_path)
 
     def _check_prerequisites(self) -> InstallStatusResult:
         base_prerequisites_result = super()._check_prerequisites()
@@ -98,7 +90,6 @@ class SlurmInstaller(BaseInstaller):
                     f"skipping download of {item.model_name}. "
                     "Ensure the model is available on compute nodes.",
                 )
-            return self.hf_model_manager.download_model(item)
 
         return super().install_one(item)
 
@@ -107,8 +98,6 @@ class SlurmInstaller(BaseInstaller):
         if self.is_installable_type(item, DockerImage):
             res = self._uninstall_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif self.is_installable_type(item, HFModel):
-            return self.hf_model_manager.remove_model(item)
 
         return super().uninstall_one(item)
 
@@ -122,7 +111,6 @@ class SlurmInstaller(BaseInstaller):
             if not self._is_hf_home_accessible():
                 item.installed_path = self.system.hf_home_path
                 return InstallStatusResult(True)
-            return self.hf_model_manager.is_model_downloaded(item)
 
         return super().is_installed_one(item)
 
@@ -130,9 +118,6 @@ class SlurmInstaller(BaseInstaller):
         if self.is_installable_type(item, DockerImage):
             if self.system.cache_docker_images_locally and not isinstance(item.installed_path, Path):
                 item.installed_path = self.system.install_path / item.cache_filename
-            return InstallStatusResult(True)
-        elif self.is_installable_type(item, HFModel):
-            item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
 
         return super().mark_as_installed_one(item)

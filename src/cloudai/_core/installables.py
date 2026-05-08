@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import logging
+import os
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -22,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
+import huggingface_hub
+from huggingface_hub.utils.tqdm import disable_progress_bars
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import Self
 
@@ -577,3 +580,57 @@ class HFModel(Installable):
 
     def __hash__(self) -> int:
         return hash(self.model_name)
+
+    def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        hf_home_path = installer.system.hf_home_path
+        logging.debug(f"Downloading HF model {self.model_name} into {hf_home_path / 'hub'}")
+        disable_progress_bars()
+        try:
+            local_path: str = huggingface_hub.snapshot_download(
+                repo_id=self.model_name,
+                cache_dir=hf_home_path.absolute() / "hub",
+            )
+            self.installed_path = Path(local_path)
+        except Exception as e:
+            return InstallStatusResult(False, f"Failed to download HF model {self.model_name}: {e}")
+
+        return InstallStatusResult(True)
+
+    def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
+        hf_home_path = installer.system.hf_home_path
+        logging.debug(f"Removing HF model {self.model_name} from {hf_home_path / 'hub'}")
+        res = self.is_installed(installer)
+        if not res.success:
+            return InstallStatusResult(True, f"HF model {self.model_name} is not downloaded.")
+
+        cmd = ["hf", "cache", "rm", "-y", f"model/{self.model_name}"]
+        env = os.environ | {"HF_HOME": str(hf_home_path.absolute())}
+        p = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        logging.debug(
+            f"Run {cmd=} with HF_HOME={env['HF_HOME']} returned code {p.returncode}, "
+            f"stdout: {p.stdout}, stderr: {p.stderr}"
+        )
+        if p.returncode != 0:
+            return InstallStatusResult(False, f"Failed to remove HF model {self.model_name}: {p.stderr} {p.stdout}")
+
+        return InstallStatusResult(True)
+
+    def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        hf_home_path = installer.system.hf_home_path
+        logging.debug(f"Checking if HF model {self.model_name} is already downloaded in {hf_home_path / 'hub'}")
+        disable_progress_bars()
+        try:
+            local_path: str = huggingface_hub.snapshot_download(
+                repo_id=self.model_name,
+                cache_dir=hf_home_path.absolute() / "hub",
+                local_files_only=True,
+            )
+            self.installed_path = Path(local_path)
+        except Exception as e:
+            return InstallStatusResult(False, f"HF model {self.model_name} is not available locally: {e}")
+
+        return InstallStatusResult(True, local_path)
+
+    def mark_as_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        self.installed_path = installer.system.hf_home_path
+        return InstallStatusResult(True)

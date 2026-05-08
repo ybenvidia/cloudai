@@ -51,7 +51,7 @@ def register_all():
     # Import systems
     from cloudai.systems.kubernetes import KubernetesInstaller, KubernetesRunner, KubernetesSystem
     from cloudai.systems.lsf import LSFInstaller, LSFRunner, LSFSystem
-    from cloudai.systems.runai import RunAIInstaller, RunAIRunner, RunAISystem
+    from cloudai.systems.runai import RunAIRunner, RunAISystem
     from cloudai.systems.slurm import SlurmInstaller, SlurmRunner, SlurmSystem
     from cloudai.systems.standalone import StandaloneInstaller, StandaloneRunner, StandaloneSystem
     from cloudai.workloads.ai_dynamo import (
@@ -242,7 +242,6 @@ def register_all():
     Registry().add_installer("standalone", StandaloneInstaller)
     Registry().add_installer("kubernetes", KubernetesInstaller)
     Registry().add_installer("lsf", LSFInstaller)
-    Registry().add_installer("runai", RunAIInstaller)
 
     Registry().add_system("slurm", SlurmSystem)
     Registry().add_system("standalone", StandaloneSystem)

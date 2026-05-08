@@ -16,7 +16,6 @@
 
 from .runai_cluster import RunAICluster
 from .runai_event import RunAIEvent
-from .runai_installer import RunAIInstaller
 from .runai_job import RunAIJob
 from .runai_node import RunAINode
 from .runai_project import RunAIProject
@@ -29,7 +28,6 @@ from .runai_training import RunAITraining
 __all__ = [
     "RunAICluster",
     "RunAIEvent",
-    "RunAIInstaller",
     "RunAIJob",
     "RunAINode",
     "RunAIPVC",

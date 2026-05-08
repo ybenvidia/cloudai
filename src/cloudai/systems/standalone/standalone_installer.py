@@ -23,7 +23,10 @@ class StandaloneInstaller(BaseInstaller):
     PREREQUISITES = ("ps", "kill")
 
     def _check_prerequisites(self) -> InstallStatusResult:
-        super()._check_prerequisites()  # TODO: if fails, print out missing prerequisites
+        res = super()._check_prerequisites()
+        if not res.success:
+            return res
+
         missing_binaries = []
         for binary in self.PREREQUISITES:
             if not self._is_binary_installed(binary):

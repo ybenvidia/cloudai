@@ -18,17 +18,12 @@ from __future__ import annotations
 
 import logging
 
-from cloudai.core import BaseInstaller, HFModel, Installable, InstallStatusResult, System
-from cloudai.util.hf_model_manager import HFModelManager
+from cloudai.core import BaseInstaller, InstallStatusResult
 from cloudai.util.lazy_imports import lazy
 
 
 class KubernetesInstaller(BaseInstaller):
     """Installer for Kubernetes systems."""
-
-    def __init__(self, system: System) -> None:
-        super().__init__(system)
-        self.hf_model_manager = HFModelManager(system.hf_home_path)
 
     def _check_prerequisites(self) -> InstallStatusResult:
         """
@@ -59,24 +54,3 @@ class KubernetesInstaller(BaseInstaller):
 
         logging.info("All prerequisites are met. Proceeding with installation.")
         return InstallStatusResult(True)
-
-    def install_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, HFModel):
-            return self.hf_model_manager.download_model(item)
-        return super().install_one(item)
-
-    def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, HFModel):
-            return self.hf_model_manager.remove_model(item)
-        return super().uninstall_one(item)
-
-    def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, HFModel):
-            return self.hf_model_manager.is_model_downloaded(item)
-        return super().is_installed_one(item)
-
-    def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, HFModel):
-            item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
-            return InstallStatusResult(True)
-        return super().mark_as_installed_one(item)

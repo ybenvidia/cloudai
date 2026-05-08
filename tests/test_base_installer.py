@@ -337,10 +337,10 @@ def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkey
     monkeypatch.setattr(PythonExecutable, "uninstall", lambda item, context: InstallStatusResult(True))
     monkeypatch.setattr(PythonExecutable, "is_installed", lambda item, context: InstallStatusResult(True))
     monkeypatch.setattr(PythonExecutable, "mark_as_installed", lambda item, context: InstallStatusResult(True))
-    installer.hf_model_manager = Mock()
-    installer.hf_model_manager.download_model.return_value = InstallStatusResult(True)
-    installer.hf_model_manager.remove_model.return_value = InstallStatusResult(True)
-    installer.hf_model_manager.is_model_downloaded.return_value = InstallStatusResult(True)
+    monkeypatch.setattr(HFModel, "install", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "uninstall", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "is_installed", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "mark_as_installed", lambda item, context: InstallStatusResult(True))
 
     git = GitRepo(url="./git_url", commit="commit_hash")
     items = [DockerImage("fake_url/img"), PythonExecutable(git), HFModel("model_name"), File(Path(__file__))]
