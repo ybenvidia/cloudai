@@ -29,7 +29,6 @@ from cloudai.core import (
     GitRepo,
     HFModel,
     Installable,
-    InstallContext,
     InstallStatusResult,
     PythonExecutable,
 )
@@ -365,7 +364,7 @@ class MyInstallable(Installable):
 
 class CustomInstallable(Installable):
     def __init__(self):
-        self.calls: list[tuple[str, InstallContext]] = []
+        self.calls: list[tuple[str, BaseInstaller]] = []
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, CustomInstallable)
@@ -373,25 +372,25 @@ class CustomInstallable(Installable):
     def __hash__(self) -> int:
         return hash("CustomInstallable")
 
-    def install(self, context: InstallContext) -> InstallStatusResult:
-        self.calls.append(("install", context))
+    def install(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("install", installer))
         return InstallStatusResult(True, "custom installed")
 
-    def uninstall(self, context: InstallContext) -> InstallStatusResult:
-        self.calls.append(("uninstall", context))
+    def uninstall(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("uninstall", installer))
         return InstallStatusResult(True, "custom uninstalled")
 
-    def is_installed(self, context: InstallContext) -> InstallStatusResult:
-        self.calls.append(("is_installed", context))
+    def is_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("is_installed", installer))
         return InstallStatusResult(True, "custom is installed")
 
-    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
-        self.calls.append(("mark_as_installed", context))
+    def mark_as_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("mark_as_installed", installer))
         return InstallStatusResult(True, "custom marked as installed")
 
 
 class CustomDockerImage(DockerImage):
-    def install(self, context: InstallContext) -> InstallStatusResult:
+    def install(self, installer: BaseInstaller) -> InstallStatusResult:
         return InstallStatusResult(True, "custom docker installed")
 
 
@@ -423,10 +422,10 @@ def test_custom_installable_is_dispatched_without_system_installer_support(stand
     assert is_installed_result.success
     assert uninstall_result.success
     assert mark_result.success
-    assert ("install", installer.install_context) in item.calls
-    assert ("is_installed", installer.install_context) in item.calls
-    assert ("uninstall", installer.install_context) in item.calls
-    assert ("mark_as_installed", installer.install_context) in item.calls
+    assert ("install", installer) in item.calls
+    assert ("is_installed", installer) in item.calls
+    assert ("uninstall", installer) in item.calls
+    assert ("mark_as_installed", installer) in item.calls
 
 
 def test_builtin_installable_subclass_uses_custom_operation(installer: KubernetesInstaller | SlurmInstaller):

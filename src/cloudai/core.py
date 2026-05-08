@@ -38,7 +38,6 @@ from ._core.installables import (
     GitRepo,
     HFModel,
     Installable,
-    InstallContext,
     InstallStatusResult,
     PythonExecutable,
 )
@@ -76,7 +75,6 @@ __all__ = [
     "GradingStrategy",
     "GridSearchAgent",
     "HFModel",
-    "InstallContext",
     "InstallStatusResult",
     "Installable",
     "JobIdRetrievalError",

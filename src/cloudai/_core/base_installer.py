@@ -23,7 +23,7 @@ from typing import Iterable, Optional, final
 
 from cloudai.util import prepare_output_dir
 
-from .installables import Installable, InstallContext, InstallStatusResult
+from .installables import Installable, InstallStatusResult
 from .system import System
 
 TASK_LIMIT_THRESHOLD = 256
@@ -124,14 +124,6 @@ class BaseInstaller:
     def all_items(self, items: Iterable[Installable], with_duplicates: bool = False) -> list[Installable]:
         all_items = list(items) + self.system.system_installables()
         return list(set(all_items)) if not with_duplicates else all_items
-
-    @property
-    def install_context(self) -> InstallContext:
-        return InstallContext(
-            installer=self,
-            install_dir=self.system.install_path,
-            hf_home_dir=self.system.hf_home_path,
-        )
 
     @final
     def is_installed(self, items: Iterable[Installable]) -> InstallStatusResult:
@@ -272,13 +264,13 @@ class BaseInstaller:
         return InstallStatusResult(True, "All items marked as installed successfully.", install_results)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        return item.install(self.install_context)
+        return item.install(self)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        return item.uninstall(self.install_context)
+        return item.uninstall(self)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        return item.is_installed(self.install_context)
+        return item.is_installed(self)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        return item.mark_as_installed(self.install_context)
+        return item.mark_as_installed(self)

@@ -30,15 +30,6 @@ if TYPE_CHECKING:
     from .base_installer import BaseInstaller
 
 
-@dataclass(frozen=True)
-class InstallContext:
-    """Context passed to installables when performing installation operations."""
-
-    installer: "BaseInstaller"
-    install_dir: Path
-    hf_home_dir: Path
-
-
 class Installable(ABC):
     @abstractmethod
     def __eq__(self, other: object) -> bool: ...
@@ -52,16 +43,16 @@ class Installable(ABC):
             f"Unsupported installable operation '{operation}' for item type: {self.__class__.__name__}",
         )
 
-    def install(self, context: InstallContext) -> "InstallStatusResult":
+    def install(self, installer: "BaseInstaller") -> "InstallStatusResult":
         return self._unsupported_result("install")
 
-    def uninstall(self, context: InstallContext) -> "InstallStatusResult":
+    def uninstall(self, installer: "BaseInstaller") -> "InstallStatusResult":
         return self._unsupported_result("uninstall")
 
-    def is_installed(self, context: InstallContext) -> "InstallStatusResult":
+    def is_installed(self, installer: "BaseInstaller") -> "InstallStatusResult":
         return self._unsupported_result("is_installed")
 
-    def mark_as_installed(self, context: InstallContext) -> "InstallStatusResult":
+    def mark_as_installed(self, installer: "BaseInstaller") -> "InstallStatusResult":
         return self._unsupported_result("mark_as_installed")
 
 
@@ -215,8 +206,8 @@ class GitRepo(Installable, BaseModel):
 
         return True, ""
 
-    def install(self, context: InstallContext) -> InstallStatusResult:
-        repo_path = context.install_dir / self.repo_name
+    def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        repo_path = installer.system.install_path / self.repo_name
         if repo_path.exists():
             verify_res = self._verify_commit(self.commit, repo_path)
             if not verify_res.success:
@@ -229,16 +220,16 @@ class GitRepo(Installable, BaseModel):
             logging.debug(msg)
             return InstallStatusResult(True, msg)
 
-        res = self._clone_and_setup_repo(context, repo_path)
+        res = self._clone_and_setup_repo(installer, repo_path)
         if not res.success:
             return res
 
         self.installed_path = repo_path
         return InstallStatusResult(True)
 
-    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+    def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
         logging.debug(f"Uninstalling git repository at {self.installed_path=}")
-        repo_path = self.installed_path if self.installed_path else context.install_dir / self.repo_name
+        repo_path = self.installed_path if self.installed_path else installer.system.install_path / self.repo_name
         if not repo_path.exists():
             return InstallStatusResult(True, f"Repository {self.url} is not cloned.")
 
@@ -248,8 +239,8 @@ class GitRepo(Installable, BaseModel):
 
         return InstallStatusResult(True)
 
-    def is_installed(self, context: InstallContext) -> InstallStatusResult:
-        repo_path = context.install_dir / self.repo_name
+    def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        repo_path = installer.system.install_path / self.repo_name
         if not repo_path.exists():
             return InstallStatusResult(False, f"Git repository {self.url} not cloned")
         verify_res = self._verify_commit(self.commit, repo_path)
@@ -263,12 +254,12 @@ class GitRepo(Installable, BaseModel):
         self.installed_path = repo_path
         return InstallStatusResult(True)
 
-    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
-        self.installed_path = context.install_dir / self.repo_name
+    def mark_as_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        self.installed_path = installer.system.install_path / self.repo_name
         return InstallStatusResult(True)
 
-    def _clone_and_setup_repo(self, context: InstallContext, repo_path: Path) -> InstallStatusResult:
-        res = self._clone_repository(context, repo_path)
+    def _clone_and_setup_repo(self, installer: "BaseInstaller", repo_path: Path) -> InstallStatusResult:
+        res = self._clone_repository(installer, repo_path)
         if not res.success:
             return res
 
@@ -288,11 +279,11 @@ class GitRepo(Installable, BaseModel):
 
         return InstallStatusResult(True)
 
-    def _clone_repository(self, context: InstallContext, path: Path) -> InstallStatusResult:
+    def _clone_repository(self, installer: "BaseInstaller", path: Path) -> InstallStatusResult:
         logging.debug(f"Cloning repository {self.url} into {path}")
         clone_cmd = ["git", "clone"]
 
-        if context.installer.is_low_thread_environment:
+        if installer.is_low_thread_environment:
             clone_cmd.extend(["-c", "pack.threads=4"])
 
         clone_cmd.extend([self.url, str(path)])
@@ -384,20 +375,20 @@ class PythonExecutable(Installable):
     def venv_name(self) -> str:
         return f"{self.git_repo.repo_name}-venv"
 
-    def install(self, context: InstallContext) -> InstallStatusResult:
-        res = self.git_repo.install(context)
+    def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        res = self.git_repo.install(installer)
         if not res.success:
             return res
 
-        return self._create_venv(context)
+        return self._create_venv(installer)
 
-    def uninstall(self, context: InstallContext) -> InstallStatusResult:
-        res = self.git_repo.uninstall(context)
+    def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
+        res = self.git_repo.uninstall(installer)
         if not res.success:
             return res
 
         logging.debug(f"Uninstalling virtual environment at {self.venv_path=}")
-        venv_path = self.venv_path if self.venv_path else context.install_dir / self.venv_name
+        venv_path = self.venv_path if self.venv_path else installer.system.install_path / self.venv_name
         if not venv_path.exists():
             return InstallStatusResult(True, f"Virtual environment {self.venv_name} is not created.")
 
@@ -407,30 +398,30 @@ class PythonExecutable(Installable):
 
         return InstallStatusResult(True)
 
-    def is_installed(self, context: InstallContext) -> InstallStatusResult:
+    def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
         repo_path = (
             self.git_repo.installed_path
             if self.git_repo.installed_path
-            else context.install_dir / self.git_repo.repo_name
+            else installer.system.install_path / self.git_repo.repo_name
         )
         if not repo_path.exists():
             return InstallStatusResult(False, f"Git repository {self.git_repo.url} not cloned")
         self.git_repo.installed_path = repo_path
 
-        venv_path = self.venv_path if self.venv_path else context.install_dir / self.venv_name
+        venv_path = self.venv_path if self.venv_path else installer.system.install_path / self.venv_name
         if not venv_path.exists():
             return InstallStatusResult(False, f"Virtual environment not created for {self.git_repo.url}")
         self.venv_path = venv_path
 
         return InstallStatusResult(True, "Python executable installed")
 
-    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
-        self.git_repo.installed_path = context.install_dir / self.git_repo.repo_name
-        self.venv_path = context.install_dir / self.venv_name
+    def mark_as_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        self.git_repo.installed_path = installer.system.install_path / self.git_repo.repo_name
+        self.venv_path = installer.system.install_path / self.venv_name
         return InstallStatusResult(True)
 
-    def _create_venv(self, context: InstallContext) -> InstallStatusResult:
-        venv_path = context.install_dir / self.venv_name
+    def _create_venv(self, installer: "BaseInstaller") -> InstallStatusResult:
+        venv_path = installer.system.install_path / self.venv_name
         logging.debug(f"Creating virtual environment in {venv_path}")
         if venv_path.exists():
             msg = f"Virtual environment already exists at {venv_path}."
@@ -448,18 +439,18 @@ class PythonExecutable(Installable):
                 False, f"Failed to create venv:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
             )
 
-        res = self._install_dependencies(context)
+        res = self._install_dependencies(installer)
         if not res.success:
             if venv_path.exists():
                 rmtree(venv_path)
             return res
 
-        self.venv_path = context.install_dir / self.venv_name
+        self.venv_path = installer.system.install_path / self.venv_name
 
         return InstallStatusResult(True)
 
-    def _install_dependencies(self, context: InstallContext) -> InstallStatusResult:
-        venv_path = context.install_dir / self.venv_name
+    def _install_dependencies(self, installer: "BaseInstaller") -> InstallStatusResult:
+        venv_path = installer.system.install_path / self.venv_name
 
         if not self.git_repo.installed_path:
             return InstallStatusResult(False, "Git repository must be installed before creating virtual environment.")
@@ -528,12 +519,12 @@ class File(Installable):
     def __hash__(self) -> int:
         return hash(self.src)
 
-    def install(self, context: InstallContext) -> InstallStatusResult:
-        self.installed_path = context.install_dir / self.src.name
+    def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        self.installed_path = installer.system.install_path / self.src.name
         shutil.copyfile(self.src, self.installed_path, follow_symlinks=False)
         return InstallStatusResult(True)
 
-    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+    def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
         if self.installed_path != self.src:
             self.installed_path.unlink()
             self._installed_path = None
@@ -541,15 +532,15 @@ class File(Installable):
         logging.debug(f"File {self.installed_path} does not exist.")
         return InstallStatusResult(True)
 
-    def is_installed(self, context: InstallContext) -> InstallStatusResult:
-        installed_path = context.install_dir / self.src.name
+    def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        installed_path = installer.system.install_path / self.src.name
         if installed_path.exists() and installed_path.read_text() == self.src.read_text():
             self.installed_path = installed_path
             return InstallStatusResult(True)
         return InstallStatusResult(False, f"File {installed_path} does not exist")
 
-    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
-        self.installed_path = context.install_dir / self.src.name
+    def mark_as_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        self.installed_path = installer.system.install_path / self.src.name
         return InstallStatusResult(True)
 
 

@@ -16,11 +16,11 @@
 
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
-from cloudai.core import GitRepo, Installable, InstallContext, InstallStatusResult
+from cloudai.core import BaseInstaller, GitRepo, Installable, InstallStatusResult
 
 
 @pytest.fixture
@@ -38,33 +38,17 @@ class CustomInstallable(Installable):
     def __hash__(self) -> int:
         return hash("CustomInstallable")
 
-    def install(self, context: InstallContext) -> InstallStatusResult:
-        self.context = context
+    def install(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.context = installer
         return InstallStatusResult(True, "custom installed")
-
-
-def test_install_context_exposes_system_paths_and_capabilities(slurm_system):
-    context = InstallContext(
-        installer=Mock(),
-        install_dir=slurm_system.install_path,
-        hf_home_dir=slurm_system.hf_home_path,
-    )
-
-    assert context.install_dir == slurm_system.install_path
-    assert context.hf_home_dir == slurm_system.hf_home_path
-    assert context.installer is not None
 
 
 def test_default_installable_operations_return_unsupported(slurm_system):
     item = CustomInstallable()
-    context = InstallContext(
-        installer=Mock(),
-        install_dir=slurm_system.install_path,
-        hf_home_dir=slurm_system.hf_home_path,
-    )
+    installer = BaseInstaller(slurm_system)
 
     for operation in [item.uninstall, item.is_installed, item.mark_as_installed]:
-        result = operation(context)
+        result = operation(installer)
         assert not result.success
         assert "Unsupported installable operation" in result.message
         assert type(item).__name__ in result.message
@@ -72,17 +56,13 @@ def test_default_installable_operations_return_unsupported(slurm_system):
 
 def test_custom_installable_can_implement_install_api(slurm_system):
     item = CustomInstallable()
-    context = InstallContext(
-        installer=Mock(),
-        install_dir=slurm_system.install_path,
-        hf_home_dir=slurm_system.hf_home_path,
-    )
+    installer = BaseInstaller(slurm_system)
 
-    result = item.install(context)
+    result = item.install(installer)
 
     assert result.success
     assert result.message == "custom installed"
-    assert item.context is context
+    assert item.context is installer
 
 
 class TestGitRepoSubmodules:
