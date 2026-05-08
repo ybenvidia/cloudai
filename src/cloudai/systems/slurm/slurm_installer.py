@@ -86,10 +86,10 @@ class SlurmInstaller(BaseInstaller):
 
     def install_one(self, item: Installable) -> InstallStatusResult:
         logging.debug(f"Attempt to install {item}")
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             res = self._install_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             if not self._is_hf_home_accessible():
                 item.installed_path = self.system.hf_home_path
                 return InstallStatusResult(
@@ -104,21 +104,21 @@ class SlurmInstaller(BaseInstaller):
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
         logging.debug(f"Attempt to uninstall {item!r}")
-        if type(item) is DockerImage:
+        if self.is_installable_type(item, DockerImage):
             res = self._uninstall_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             return self.hf_model_manager.remove_model(item)
 
         return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage and isinstance(item, DockerImage):
+        if self.is_installable_type(item, DockerImage):
             res = self.docker_image_cache_manager.check_docker_image_exists(item.url, item.cache_filename)
             if res.success and res.docker_image_path:
                 item.installed_path = res.docker_image_path
             return InstallStatusResult(res.success, res.message)
-        elif type(item) is HFModel and isinstance(item, HFModel):
+        elif self.is_installable_type(item, HFModel):
             if not self._is_hf_home_accessible():
                 item.installed_path = self.system.hf_home_path
                 return InstallStatusResult(True)
@@ -127,11 +127,11 @@ class SlurmInstaller(BaseInstaller):
         return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if type(item) is DockerImage and isinstance(item, DockerImage):
+        if self.is_installable_type(item, DockerImage):
             if self.system.cache_docker_images_locally and not isinstance(item.installed_path, Path):
                 item.installed_path = self.system.install_path / item.cache_filename
             return InstallStatusResult(True)
-        elif type(item) is HFModel:
+        elif self.is_installable_type(item, HFModel):
             item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
 
