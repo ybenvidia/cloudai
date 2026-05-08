@@ -328,14 +328,15 @@ def installer(
     return installer
 
 
-def test_check_supported(installer: KubernetesInstaller | SlurmInstaller):
+def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkeypatch: pytest.MonkeyPatch):
     if isinstance(installer, SlurmInstaller):
         installer._install_docker_image = lambda item: DockerImageCacheResult(True)
         installer._uninstall_docker_image = lambda item: DockerImageCacheResult(True)
         installer.docker_image_cache_manager.check_docker_image_exists = Mock(return_value=DockerImageCacheResult(True))
-    installer._install_python_executable = lambda item: InstallStatusResult(True)
-    installer._uninstall_python_executable = lambda item: InstallStatusResult(True)
-    installer._is_python_executable_installed = lambda item: InstallStatusResult(True)
+    monkeypatch.setattr(PythonExecutable, "install", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "uninstall", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "is_installed", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "mark_as_installed", lambda item, context: InstallStatusResult(True))
     installer.hf_model_manager = Mock()
 
     git = GitRepo(url="./git_url", commit="commit_hash")
@@ -389,6 +390,11 @@ class CustomInstallable(Installable):
         return InstallStatusResult(True, "custom marked as installed")
 
 
+class CustomDockerImage(DockerImage):
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        return InstallStatusResult(True, "custom docker installed")
+
+
 def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
     unsupported = MyInstallable()
     for func in [
@@ -399,17 +405,14 @@ def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
     ]:
         res = func(unsupported)
         assert not res.success
-        assert res.message == f"Unsupported item type: {type(unsupported)}"
+        assert "Unsupported installable operation" in res.message
+        assert type(unsupported).__name__ in res.message
 
 
 def test_custom_installable_is_dispatched_without_system_installer_support(standalone_system):
     installer = StandaloneInstaller(standalone_system)
     installer._check_prerequisites = Mock(return_value=InstallStatusResult(True))
     item = CustomInstallable()
-    installer.install_one = Mock(return_value=InstallStatusResult(False, "fallback install"))
-    installer.uninstall_one = Mock(return_value=InstallStatusResult(False, "fallback uninstall"))
-    installer.is_installed_one = Mock(return_value=InstallStatusResult(False, "fallback status"))
-    installer.mark_as_installed_one = Mock(return_value=InstallStatusResult(False, "fallback mark"))
 
     install_result = installer.install([item])
     is_installed_result = installer.is_installed([item])
@@ -424,7 +427,12 @@ def test_custom_installable_is_dispatched_without_system_installer_support(stand
     assert ("is_installed", installer.install_context) in item.calls
     assert ("uninstall", installer.install_context) in item.calls
     assert ("mark_as_installed", installer.install_context) in item.calls
-    installer.install_one.assert_not_called()
-    installer.uninstall_one.assert_not_called()
-    installer.is_installed_one.assert_not_called()
-    installer.mark_as_installed_one.assert_not_called()
+
+
+def test_builtin_installable_subclass_uses_custom_operation(installer: KubernetesInstaller | SlurmInstaller):
+    item = CustomDockerImage("fake_url/img")
+
+    res = installer.install_one(item)
+
+    assert res.success
+    assert res.message == "custom docker installed"

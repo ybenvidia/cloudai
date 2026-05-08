@@ -16,7 +16,6 @@
 
 import logging
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from shutil import rmtree
@@ -24,7 +23,6 @@ from shutil import rmtree
 from cloudai.core import (
     BaseInstaller,
     DockerImage,
-    File,
     GitRepo,
     HFModel,
     Installable,
@@ -91,18 +89,10 @@ class SlurmInstaller(BaseInstaller):
 
     def install_one(self, item: Installable) -> InstallStatusResult:
         logging.debug(f"Attempt to install {item}")
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             res = self._install_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif isinstance(item, GitRepo):
-            return self._install_one_git_repo(item)
-        elif isinstance(item, PythonExecutable):
-            return self._install_python_executable(item)
-        elif isinstance(item, File):
-            item.installed_path = self.system.install_path / item.src.name
-            shutil.copyfile(item.src, item.installed_path, follow_symlinks=False)
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             if not self._is_hf_home_accessible():
                 item.installed_path = self.system.hf_home_path
                 return InstallStatusResult(
@@ -113,74 +103,42 @@ class SlurmInstaller(BaseInstaller):
                 )
             return self.hf_model_manager.download_model(item)
 
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
         logging.debug(f"Attempt to uninstall {item!r}")
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             res = self._uninstall_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif isinstance(item, PythonExecutable):
-            return self._uninstall_python_executable(item)
-        elif isinstance(item, GitRepo):
-            return self._uninstall_git_repo(item)
-        elif isinstance(item, File):
-            if item.installed_path != item.src:
-                item.installed_path.unlink()
-                item._installed_path = None
-                return InstallStatusResult(True)
-            logging.debug(f"File {item.installed_path} does not exist.")
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             return self.hf_model_manager.remove_model(item)
 
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             res = self.docker_image_cache_manager.check_docker_image_exists(item.url, item.cache_filename)
             if res.success and res.docker_image_path:
                 item.installed_path = res.docker_image_path
             return InstallStatusResult(res.success, res.message)
-        elif isinstance(item, GitRepo):
-            return self._is_git_repo_installed(item)
-        elif isinstance(item, PythonExecutable):
-            return self._is_python_executable_installed(item)
-        elif isinstance(item, File):
-            if (self.system.install_path / item.src.name).exists() and (
-                self.system.install_path / item.src.name
-            ).read_text() == item.src.read_text():
-                item.installed_path = self.system.install_path / item.src.name
-                return InstallStatusResult(True)
-            return InstallStatusResult(False, f"File {item.installed_path} does not exist")
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             if not self._is_hf_home_accessible():
                 item.installed_path = self.system.hf_home_path
                 return InstallStatusResult(True)
             return self.hf_model_manager.is_model_downloaded(item)
 
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             if self.system.cache_docker_images_locally and not isinstance(item.installed_path, Path):
                 item.installed_path = self.system.install_path / item.cache_filename
             return InstallStatusResult(True)
-        elif isinstance(item, GitRepo):
-            item.installed_path = self.system.install_path / item.repo_name
-            return InstallStatusResult(True)
-        elif isinstance(item, PythonExecutable):
-            item.git_repo.installed_path = self.system.install_path / item.git_repo.repo_name
-            item.venv_path = self.system.install_path / item.venv_name
-            return InstallStatusResult(True)
-        elif isinstance(item, File):
-            item.installed_path = self.system.install_path / item.src.name
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
 
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().mark_as_installed_one(item)
 
     def _is_hf_home_accessible(self) -> bool:
         """Check if hf_home_path is accessible locally (parent directory exists and is writable)."""

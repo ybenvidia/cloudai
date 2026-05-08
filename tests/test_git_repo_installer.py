@@ -340,8 +340,8 @@ class TestGitRepoInstaller:
     ):
         repo_path = installer.system.install_path / git.repo_name
         repo_path.mkdir()
-        installer._verify_commit = Mock(return_value=InstallStatusResult(True))
-        res = installer.is_installed_one(git)
+        with patch.object(GitRepo, "_verify_commit", return_value=InstallStatusResult(True)):
+            res = installer.is_installed_one(git)
 
         assert res.success
         check_submodules_state_mock.assert_called_once_with(repo_path)
@@ -351,8 +351,10 @@ class TestGitRepoInstaller:
     ):
         repo_path = installer.system.install_path / git_unmocked.repo_name
         repo_path.mkdir()
-        installer._verify_commit = Mock(return_value=InstallStatusResult(True))
-        with patch.object(GitRepo, "check_submodules_state", return_value=(False, "Submodule state does not match")):
+        with (
+            patch.object(GitRepo, "_verify_commit", return_value=InstallStatusResult(True)),
+            patch.object(GitRepo, "check_submodules_state", return_value=(False, "Submodule state does not match")),
+        ):
             res = installer.is_installed_one(git_unmocked)
 
         assert not res.success

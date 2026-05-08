@@ -16,7 +16,7 @@
 
 from pathlib import Path
 from subprocess import CompletedProcess
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -44,25 +44,21 @@ class CustomInstallable(Installable):
 
 
 def test_install_context_exposes_system_paths_and_capabilities(slurm_system):
-    helper = object()
     context = InstallContext(
-        system=slurm_system,
+        installer=Mock(),
         install_dir=slurm_system.install_path,
         hf_home_dir=slurm_system.hf_home_path,
-        capabilities={"helper": helper},
     )
 
-    assert context.system is slurm_system
     assert context.install_dir == slurm_system.install_path
     assert context.hf_home_dir == slurm_system.hf_home_path
-    assert context.capability("helper") is helper
-    assert context.capability("missing", "default") == "default"
+    assert context.installer is not None
 
 
 def test_default_installable_operations_return_unsupported(slurm_system):
     item = CustomInstallable()
     context = InstallContext(
-        system=slurm_system,
+        installer=Mock(),
         install_dir=slurm_system.install_path,
         hf_home_dir=slurm_system.hf_home_path,
     )
@@ -77,7 +73,7 @@ def test_default_installable_operations_return_unsupported(slurm_system):
 def test_custom_installable_can_implement_install_api(slurm_system):
     item = CustomInstallable()
     context = InstallContext(
-        system=slurm_system,
+        installer=Mock(),
         install_dir=slurm_system.install_path,
         hf_home_dir=slurm_system.hf_home_path,
     )

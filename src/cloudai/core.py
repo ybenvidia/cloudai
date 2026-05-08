@@ -16,7 +16,7 @@
 
 """Core CloudAI base classes and interfaces."""
 
-from ._core.base_installer import BaseInstaller, InstallStatusResult
+from ._core.base_installer import BaseInstaller
 from ._core.base_job import BaseJob
 from ._core.base_reporter import Reporter, case_name
 from ._core.base_runner import BaseRunner
@@ -32,7 +32,16 @@ from ._core.exceptions import (
 )
 from ._core.grader import Grader
 from ._core.grading_strategy import GradingStrategy
-from ._core.installables import DockerImage, File, GitRepo, HFModel, Installable, InstallContext, PythonExecutable
+from ._core.installables import (
+    DockerImage,
+    File,
+    GitRepo,
+    HFModel,
+    Installable,
+    InstallContext,
+    InstallStatusResult,
+    PythonExecutable,
+)
 from ._core.job_status_result import JobStatusResult
 from ._core.json_gen_strategy import JsonGenStrategy
 from ._core.registry import Registry

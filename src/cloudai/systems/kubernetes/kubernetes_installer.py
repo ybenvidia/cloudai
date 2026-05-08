@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
 import subprocess
 from pathlib import Path
 from shutil import rmtree
@@ -25,7 +24,6 @@ from shutil import rmtree
 from cloudai.core import (
     BaseInstaller,
     DockerImage,
-    File,
     GitRepo,
     HFModel,
     Installable,
@@ -75,83 +73,33 @@ class KubernetesInstaller(BaseInstaller):
         return InstallStatusResult(True)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             return InstallStatusResult(True, f"Docker image {item} installed")
-        elif isinstance(item, GitRepo):
-            return self._install_one_git_repo(item)
-        elif isinstance(item, PythonExecutable):
-            return self._install_python_executable(item)
-        elif isinstance(item, File):
-            item.installed_path = self.system.install_path / item.src.name
-            shutil.copyfile(item.src, item.installed_path, follow_symlinks=False)
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             return self.hf_model_manager.download_model(item)
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             return InstallStatusResult(True, f"Docker image {item} uninstalled")
-        elif isinstance(item, GitRepo):
-            return self._uninstall_git_repo(item)
-        elif isinstance(item, PythonExecutable):
-            return self._uninstall_python_executable(item)
-        elif isinstance(item, File):
-            if item.installed_path != item.src:
-                item.installed_path.unlink()
-                item._installed_path = None
-                return InstallStatusResult(True)
-            logging.debug(f"File {item.installed_path} does not exist.")
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             return self.hf_model_manager.remove_model(item)
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             return InstallStatusResult(True, f"Docker image {item} is installed")
-        elif isinstance(item, GitRepo):
-            repo_path = self.system.install_path / item.repo_name
-            if repo_path.exists():
-                verify_res = self._verify_commit(item.commit, repo_path)
-                if not verify_res.success:
-                    return verify_res
-                verify_submodules, msg_submodules = item.check_submodules_state(repo_path)
-                if not verify_submodules:
-                    return InstallStatusResult(False, msg_submodules)
-                item.installed_path = repo_path
-                return InstallStatusResult(True)
-            return InstallStatusResult(False, f"Git repository {item.url} not cloned")
-        elif isinstance(item, PythonExecutable):
-            return self._is_python_executable_installed(item)
-        elif isinstance(item, File):
-            if (self.system.install_path / item.src.name).exists() and (
-                self.system.install_path / item.src.name
-            ).read_text() == item.src.read_text():
-                item.installed_path = self.system.install_path / item.src.name
-                return InstallStatusResult(True)
-            return InstallStatusResult(False, f"File {self.system.install_path / item.src.name} does not exist")
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             return self.hf_model_manager.is_model_downloaded(item)
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if isinstance(item, DockerImage):
+        if type(item) is DockerImage:
             return InstallStatusResult(True, f"Docker image {item} marked as installed")
-        elif isinstance(item, GitRepo):
-            item.installed_path = self.system.install_path / item.repo_name
-            return InstallStatusResult(True)
-        elif isinstance(item, PythonExecutable):
-            item.git_repo.installed_path = self.system.install_path / item.git_repo.repo_name
-            item.venv_path = self.system.install_path / item.venv_name
-            return InstallStatusResult(True)
-        elif isinstance(item, File):
-            item.installed_path = self.system.install_path / item.src.name
-            return InstallStatusResult(True)
-        elif isinstance(item, HFModel):
+        elif type(item) is HFModel:
             item.installed_path = self.system.hf_home_path  # fake path is OK here as the whole HF home will be mounted
             return InstallStatusResult(True)
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().mark_as_installed_one(item)
 
     def _install_one_git_repo(self, item: GitRepo) -> InstallStatusResult:
         repo_path = self.system.install_path / item.repo_name
@@ -361,7 +309,7 @@ class KubernetesInstaller(BaseInstaller):
             return InstallStatusResult(True, msg)
 
         logging.debug(f"Removing folder {repo_path}")
-        shutil.rmtree(repo_path)
+        rmtree(repo_path)
         item.installed_path = None
 
         return InstallStatusResult(True)

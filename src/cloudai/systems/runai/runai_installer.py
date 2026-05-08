@@ -16,13 +16,24 @@
 
 import logging
 
-from cloudai.core import BaseInstaller, Installable, InstallStatusResult
+from cloudai.core import (
+    BaseInstaller,
+    DockerImage,
+    File,
+    GitRepo,
+    HFModel,
+    Installable,
+    InstallStatusResult,
+    PythonExecutable,
+)
 
 from .runai_system import RunAISystem
 
 
 class RunAIInstaller(BaseInstaller):
     """Installer for RunAI systems."""
+
+    NOOP_INSTALLABLES = (DockerImage, File, GitRepo, HFModel, PythonExecutable)
 
     def __init__(self, system: RunAISystem):
         super().__init__(system)
@@ -32,17 +43,25 @@ class RunAIInstaller(BaseInstaller):
         return InstallStatusResult(True)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        logging.info(f"Installing {item} for RunAI.")
-        return InstallStatusResult(True)
+        if type(item) in self.NOOP_INSTALLABLES:
+            logging.info(f"Installing {item} for RunAI.")
+            return InstallStatusResult(True)
+        return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        logging.info(f"Uninstalling {item} for RunAI.")
-        return InstallStatusResult(True)
+        if type(item) in self.NOOP_INSTALLABLES:
+            logging.info(f"Uninstalling {item} for RunAI.")
+            return InstallStatusResult(True)
+        return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        logging.info(f"Checking if {item} is installed for RunAI.")
-        return InstallStatusResult(True)
+        if type(item) in self.NOOP_INSTALLABLES:
+            logging.info(f"Checking if {item} is installed for RunAI.")
+            return InstallStatusResult(True)
+        return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        logging.info(f"Marking {item} as installed for RunAI.")
-        return InstallStatusResult(True)
+        if type(item) in self.NOOP_INSTALLABLES:
+            logging.info(f"Marking {item} as installed for RunAI.")
+            return InstallStatusResult(True)
+        return super().mark_as_installed_one(item)

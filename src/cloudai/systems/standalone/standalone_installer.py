@@ -36,13 +36,13 @@ class StandaloneInstaller(BaseInstaller):
         return InstallStatusResult(True)
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        return super().mark_as_installed_one(item)

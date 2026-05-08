@@ -14,34 +14,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from shutil import rmtree
+from typing import TYPE_CHECKING, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
+from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from .install_status_result import InstallStatusResult
+    from .base_installer import BaseInstaller
 
 
 @dataclass(frozen=True)
 class InstallContext:
     """Context passed to installables when performing installation operations."""
 
+    installer: "BaseInstaller"
     install_dir: Path
     hf_home_dir: Path
-    capabilities: dict[str, Any] = field(default_factory=dict)
-
-    def capability(self, name: str, default: Any = None) -> Any:
-        """Return a named installer capability, if one was provided."""
-        return self.capabilities.get(name, default)
 
 
 class Installable(ABC):
-    """Installable object."""
-
     @abstractmethod
     def __eq__(self, other: object) -> bool: ...
 
@@ -49,11 +47,9 @@ class Installable(ABC):
     def __hash__(self) -> int: ...
 
     def _unsupported_result(self, operation: str) -> "InstallStatusResult":
-        from .install_status_result import InstallStatusResult
-
         return InstallStatusResult(
             False,
-            f"Unsupported installable operation '{operation}' for item type: {type(self)}",
+            f"Unsupported installable operation '{operation}' for item type: {self.__class__.__name__}",
         )
 
     def install(self, context: InstallContext) -> "InstallStatusResult":
@@ -67,6 +63,29 @@ class Installable(ABC):
 
     def mark_as_installed(self, context: InstallContext) -> "InstallStatusResult":
         return self._unsupported_result("mark_as_installed")
+
+
+class InstallStatusResult:
+    """
+    Class representing the result of an installation, uninstallation, or status check.
+
+    Attributes
+        success (bool): Indicates whether the operation was successful.
+        message (str): A message providing additional information about the result.
+        details (Optional[Dict[str, str]]): A dictionary containing details about the result for each test template.
+    """
+
+    def __init__(self, success: bool, message: str = "", details: dict[Installable, Self] | None = None):
+        self.success = success
+        self.message = message
+        self.details = details if details else {}
+
+    def __bool__(self):
+        return self.success
+
+    def __str__(self):
+        details_str = "\n".join(f"  - {key}: {value}" for key, value in self.details.items())
+        return f"{self.message}\n{details_str}" if self.details else self.message
 
 
 @dataclass
@@ -196,6 +215,145 @@ class GitRepo(Installable, BaseModel):
 
         return True, ""
 
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        repo_path = context.install_dir / self.repo_name
+        if repo_path.exists():
+            verify_res = self._verify_commit(self.commit, repo_path)
+            if not verify_res.success:
+                return verify_res
+            submodules_res, submodules_msg = self.ensure_submodules_state(repo_path)
+            if not submodules_res:
+                return InstallStatusResult(False, submodules_msg)
+            self.installed_path = repo_path
+            msg = f"Git repository already exists at {repo_path}."
+            logging.debug(msg)
+            return InstallStatusResult(True, msg)
+
+        res = self._clone_and_setup_repo(context, repo_path)
+        if not res.success:
+            return res
+
+        self.installed_path = repo_path
+        return InstallStatusResult(True)
+
+    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+        logging.debug(f"Uninstalling git repository at {self.installed_path=}")
+        repo_path = self.installed_path if self.installed_path else context.install_dir / self.repo_name
+        if not repo_path.exists():
+            return InstallStatusResult(True, f"Repository {self.url} is not cloned.")
+
+        logging.debug(f"Removing folder {repo_path}")
+        rmtree(repo_path)
+        self.installed_path = None
+
+        return InstallStatusResult(True)
+
+    def is_installed(self, context: InstallContext) -> InstallStatusResult:
+        repo_path = context.install_dir / self.repo_name
+        if not repo_path.exists():
+            return InstallStatusResult(False, f"Git repository {self.url} not cloned")
+        verify_res = self._verify_commit(self.commit, repo_path)
+        if not verify_res.success:
+            return verify_res
+
+        verify_submodules, msg_submodules = self.check_submodules_state(repo_path)
+        if not verify_submodules:
+            return InstallStatusResult(False, msg_submodules)
+
+        self.installed_path = repo_path
+        return InstallStatusResult(True)
+
+    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
+        self.installed_path = context.install_dir / self.repo_name
+        return InstallStatusResult(True)
+
+    def _clone_and_setup_repo(self, context: InstallContext, repo_path: Path) -> InstallStatusResult:
+        res = self._clone_repository(context, repo_path)
+        if not res.success:
+            return res
+
+        res = self._checkout_commit(self.commit, repo_path)
+        if not res.success:
+            logging.error(f"Checkout failed, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
+            return res
+
+        submodules_res, submodules_msg = self.ensure_submodules_state(repo_path)
+        if not submodules_res:
+            logging.error(f"Submodule setup failed with `{submodules_msg}`, removing cloned repository at {repo_path}")
+            if repo_path.exists():
+                rmtree(repo_path)
+            return InstallStatusResult(False, submodules_msg)
+
+        return InstallStatusResult(True)
+
+    def _clone_repository(self, context: InstallContext, path: Path) -> InstallStatusResult:
+        logging.debug(f"Cloning repository {self.url} into {path}")
+        clone_cmd = ["git", "clone"]
+
+        if context.installer.is_low_thread_environment:
+            clone_cmd.extend(["-c", "pack.threads=4"])
+
+        clone_cmd.extend([self.url, str(path)])
+
+        logging.debug(f"Running git clone command: {' '.join(clone_cmd)}")
+        result = subprocess.run(clone_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to clone repository: {result.stderr}")
+        return InstallStatusResult(True)
+
+    def _checkout_commit(self, commit_hash: str, path: Path) -> InstallStatusResult:
+        logging.debug(f"Checking out specific commit in {path}: {commit_hash}")
+        result = subprocess.run(["git", "checkout", commit_hash], cwd=str(path), capture_output=True, text=True)
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to checkout commit {commit_hash}: {result.stderr}")
+        return InstallStatusResult(True)
+
+    def _verify_commit(self, ref: str, path: Path) -> InstallStatusResult:
+        try:
+            result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(path), capture_output=True, text=True)
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {result.stderr}")
+        actual_commit = result.stdout.strip()
+
+        try:
+            commit_resolved = subprocess.run(
+                ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        if commit_resolved.returncode != 0:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {commit_resolved.stderr}")
+        expected_commit = commit_resolved.stdout.strip()
+
+        try:
+            branch_resolved = subprocess.run(
+                ["git", "symbolic-ref", "--short", "-q", "HEAD"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+            )
+        except OSError as e:
+            return InstallStatusResult(False, f"Failed to verify commit in {path}: {e}")
+        actual_branch = branch_resolved.stdout.strip() if branch_resolved.returncode == 0 else ""
+
+        if actual_commit == expected_commit or ref == actual_branch:
+            return InstallStatusResult(True)
+
+        return InstallStatusResult(
+            success=False,
+            message=(
+                f"Failed to verify commit in {path}: {actual_commit=}, {actual_branch=}, expected was {ref} or "
+                f"{expected_commit=}"
+            ),
+        )
+
 
 @dataclass
 class PythonExecutable(Installable):
@@ -226,6 +384,128 @@ class PythonExecutable(Installable):
     def venv_name(self) -> str:
         return f"{self.git_repo.repo_name}-venv"
 
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        res = self.git_repo.install(context)
+        if not res.success:
+            return res
+
+        return self._create_venv(context)
+
+    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+        res = self.git_repo.uninstall(context)
+        if not res.success:
+            return res
+
+        logging.debug(f"Uninstalling virtual environment at {self.venv_path=}")
+        venv_path = self.venv_path if self.venv_path else context.install_dir / self.venv_name
+        if not venv_path.exists():
+            return InstallStatusResult(True, f"Virtual environment {self.venv_name} is not created.")
+
+        logging.debug(f"Removing folder {venv_path}")
+        rmtree(venv_path)
+        self.venv_path = None
+
+        return InstallStatusResult(True)
+
+    def is_installed(self, context: InstallContext) -> InstallStatusResult:
+        repo_path = (
+            self.git_repo.installed_path
+            if self.git_repo.installed_path
+            else context.install_dir / self.git_repo.repo_name
+        )
+        if not repo_path.exists():
+            return InstallStatusResult(False, f"Git repository {self.git_repo.url} not cloned")
+        self.git_repo.installed_path = repo_path
+
+        venv_path = self.venv_path if self.venv_path else context.install_dir / self.venv_name
+        if not venv_path.exists():
+            return InstallStatusResult(False, f"Virtual environment not created for {self.git_repo.url}")
+        self.venv_path = venv_path
+
+        return InstallStatusResult(True, "Python executable installed")
+
+    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
+        self.git_repo.installed_path = context.install_dir / self.git_repo.repo_name
+        self.venv_path = context.install_dir / self.venv_name
+        return InstallStatusResult(True)
+
+    def _create_venv(self, context: InstallContext) -> InstallStatusResult:
+        venv_path = context.install_dir / self.venv_name
+        logging.debug(f"Creating virtual environment in {venv_path}")
+        if venv_path.exists():
+            msg = f"Virtual environment already exists at {venv_path}."
+            logging.debug(msg)
+            return InstallStatusResult(True, msg)
+
+        cmd = ["python", "-m", "venv", str(venv_path)]
+        logging.debug(f"Creating venv using cmd: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        logging.debug(f"venv creation STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
+        if result.returncode != 0:
+            if venv_path.exists():
+                rmtree(venv_path)
+            return InstallStatusResult(
+                False, f"Failed to create venv:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+            )
+
+        res = self._install_dependencies(context)
+        if not res.success:
+            if venv_path.exists():
+                rmtree(venv_path)
+            return res
+
+        self.venv_path = context.install_dir / self.venv_name
+
+        return InstallStatusResult(True)
+
+    def _install_dependencies(self, context: InstallContext) -> InstallStatusResult:
+        venv_path = context.install_dir / self.venv_name
+
+        if not self.git_repo.installed_path:
+            return InstallStatusResult(False, "Git repository must be installed before creating virtual environment.")
+
+        project_dir = self.git_repo.installed_path
+
+        if self.project_subpath:
+            project_dir = project_dir / self.project_subpath
+
+        pyproject_toml = project_dir / "pyproject.toml"
+        requirements_txt = project_dir / "requirements.txt"
+
+        if pyproject_toml.exists() and requirements_txt.exists():
+            if self.dependencies_from_pyproject:
+                return self._install_pyproject(venv_path, project_dir)
+            return self._install_requirements(venv_path, requirements_txt)
+        if pyproject_toml.exists():
+            return self._install_pyproject(venv_path, project_dir)
+        if requirements_txt.exists():
+            return self._install_requirements(venv_path, requirements_txt)
+
+        return InstallStatusResult(False, "No pyproject.toml or requirements.txt found for installation.")
+
+    def _install_pyproject(self, venv_dir: Path, project_dir: Path) -> InstallStatusResult:
+        install_cmd = [str(venv_dir / "bin" / "python"), "-m", "pip", "install", str(project_dir)]
+        logging.debug(f"Installing dependencies using: {' '.join(install_cmd)}")
+        result = subprocess.run(install_cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to install {project_dir} using pip: {result.stderr}")
+
+        return InstallStatusResult(True)
+
+    def _install_requirements(self, venv_dir: Path, requirements_txt: Path) -> InstallStatusResult:
+        if not requirements_txt.is_file():
+            return InstallStatusResult(False, f"Requirements file is invalid or does not exist: {requirements_txt}")
+
+        install_cmd = [str(venv_dir / "bin" / "python"), "-m", "pip", "install", "-r", str(requirements_txt)]
+        logging.debug(f"Installing dependencies using: {' '.join(install_cmd)}")
+        result = subprocess.run(install_cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return InstallStatusResult(False, f"Failed to install dependencies from requirements.txt: {result.stderr}")
+
+        return InstallStatusResult(True)
+
 
 @dataclass
 class File(Installable):
@@ -247,6 +527,30 @@ class File(Installable):
 
     def __hash__(self) -> int:
         return hash(self.src)
+
+    def install(self, context: InstallContext) -> InstallStatusResult:
+        self.installed_path = context.install_dir / self.src.name
+        shutil.copyfile(self.src, self.installed_path, follow_symlinks=False)
+        return InstallStatusResult(True)
+
+    def uninstall(self, context: InstallContext) -> InstallStatusResult:
+        if self.installed_path != self.src:
+            self.installed_path.unlink()
+            self._installed_path = None
+            return InstallStatusResult(True)
+        logging.debug(f"File {self.installed_path} does not exist.")
+        return InstallStatusResult(True)
+
+    def is_installed(self, context: InstallContext) -> InstallStatusResult:
+        installed_path = context.install_dir / self.src.name
+        if installed_path.exists() and installed_path.read_text() == self.src.read_text():
+            self.installed_path = installed_path
+            return InstallStatusResult(True)
+        return InstallStatusResult(False, f"File {installed_path} does not exist")
+
+    def mark_as_installed(self, context: InstallContext) -> InstallStatusResult:
+        self.installed_path = context.install_dir / self.src.name
+        return InstallStatusResult(True)
 
 
 @dataclass
