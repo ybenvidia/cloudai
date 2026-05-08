@@ -16,12 +16,7 @@
 
 import logging
 
-from cloudai.core import (
-    BaseInstaller,
-    HFModel,
-    Installable,
-    InstallStatusResult,
-)
+from cloudai.core import BaseInstaller, HFModel, Installable, InstallStatusResult
 from cloudai.util.hf_model_manager import HFModelManager
 
 from .runai_system import RunAISystem

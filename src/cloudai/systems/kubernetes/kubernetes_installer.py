@@ -18,13 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from cloudai.core import (
-    BaseInstaller,
-    HFModel,
-    Installable,
-    InstallStatusResult,
-    System,
-)
+from cloudai.core import BaseInstaller, HFModel, Installable, InstallStatusResult, System
 from cloudai.util.hf_model_manager import HFModelManager
 from cloudai.util.lazy_imports import lazy
 
