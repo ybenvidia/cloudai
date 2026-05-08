@@ -15,11 +15,10 @@
 # limitations under the License.
 
 import logging
-import os
 import subprocess
 from pathlib import Path
 
-from cloudai.core import BaseInstaller, DockerImage, HFModel, Installable, InstallStatusResult
+from cloudai.core import BaseInstaller, DockerImage, Installable, InstallStatusResult
 
 from .docker_image_cache_manager import DockerImageCacheManager, DockerImageCacheResult
 from .slurm_system import SlurmSystem
@@ -81,15 +80,6 @@ class SlurmInstaller(BaseInstaller):
         if self.is_installable_type(item, DockerImage):
             res = self._install_docker_image(item)
             return InstallStatusResult(res.success, res.message)
-        elif self.is_installable_type(item, HFModel):
-            if not self._is_hf_home_accessible():
-                item.installed_path = self.system.hf_home_path
-                return InstallStatusResult(
-                    True,
-                    f"HF home path '{self.system.hf_home_path}' is not accessible locally, "
-                    f"skipping download of {item.model_name}. "
-                    "Ensure the model is available on compute nodes.",
-                )
 
         return super().install_one(item)
 
@@ -107,10 +97,6 @@ class SlurmInstaller(BaseInstaller):
             if res.success and res.docker_image_path:
                 item.installed_path = res.docker_image_path
             return InstallStatusResult(res.success, res.message)
-        elif self.is_installable_type(item, HFModel):
-            if not self._is_hf_home_accessible():
-                item.installed_path = self.system.hf_home_path
-                return InstallStatusResult(True)
 
         return super().is_installed_one(item)
 
@@ -121,15 +107,6 @@ class SlurmInstaller(BaseInstaller):
             return InstallStatusResult(True)
 
         return super().mark_as_installed_one(item)
-
-    def _is_hf_home_accessible(self) -> bool:
-        """Check if hf_home_path is accessible locally (parent directory exists and is writable)."""
-        try:
-            parent = self.system.hf_home_path.resolve().parent
-            return parent.exists() and parent.is_dir() and os.access(parent, os.W_OK | os.X_OK)
-
-        except (OSError, RuntimeError):
-            return False
 
     def _install_docker_image(self, item: DockerImage) -> DockerImageCacheResult:
         res = self.docker_image_cache_manager.ensure_docker_image(item.url, item.cache_filename)

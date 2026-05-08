@@ -36,7 +36,7 @@ def installer(slurm_system, tmp_path: Path) -> BaseInstaller:
 def test_download(hf_model: HFModel, installer: BaseInstaller) -> None:
     assert hf_model._installed_path is None
 
-    with patch("cloudai._core.installables.snapshot_download", return_value=str("/real/path")):
+    with patch("cloudai._core.installables.huggingface_hub.snapshot_download", return_value=str("/real/path")):
         hf_model.install(installer)
 
     assert hf_model.installed_path == Path("/real/path")
@@ -44,7 +44,7 @@ def test_download(hf_model: HFModel, installer: BaseInstaller) -> None:
 
 def test_download_raises(hf_model: HFModel, installer: BaseInstaller) -> None:
     with patch(
-        "cloudai._core.installables.snapshot_download",
+        "cloudai._core.installables.huggingface_hub.snapshot_download",
         side_effect=Exception("some error message"),
     ):
         result = hf_model.install(installer)
@@ -55,7 +55,7 @@ def test_download_raises(hf_model: HFModel, installer: BaseInstaller) -> None:
 
 
 def test_is_downloaded(hf_model: HFModel, installer: BaseInstaller) -> None:
-    with patch("cloudai._core.installables.snapshot_download", return_value=str("/real/path")):
+    with patch("cloudai._core.installables.huggingface_hub.snapshot_download", return_value=str("/real/path")):
         result = hf_model.is_installed(installer)
 
     assert result.success
@@ -65,7 +65,7 @@ def test_is_downloaded(hf_model: HFModel, installer: BaseInstaller) -> None:
 
 def test_is_downloaded_raises(hf_model: HFModel, installer: BaseInstaller) -> None:
     with patch(
-        "cloudai._core.installables.snapshot_download",
+        "cloudai._core.installables.huggingface_hub.snapshot_download",
         side_effect=Exception("some error message"),
     ):
         result = hf_model.is_installed(installer)

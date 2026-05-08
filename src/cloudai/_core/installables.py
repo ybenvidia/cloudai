@@ -581,7 +581,27 @@ class HFModel(Installable):
     def __hash__(self) -> int:
         return hash(self.model_name)
 
+    @staticmethod
+    def _is_hf_home_accessible(installer: "BaseInstaller") -> bool:
+        try:
+            parent = installer.system.hf_home_path.resolve().parent
+            return parent.exists() and parent.is_dir() and os.access(parent, os.W_OK | os.X_OK)
+        except (OSError, RuntimeError):
+            return False
+
+    def _assume_available_on_execution_nodes(self, installer: "BaseInstaller", operation: str) -> InstallStatusResult:
+        self.installed_path = installer.system.hf_home_path
+        return InstallStatusResult(
+            True,
+            f"HF home path '{installer.system.hf_home_path}' is not accessible locally, "
+            f"skipping {operation} of {self.model_name}. "
+            "Ensure the model is available on execution nodes.",
+        )
+
     def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        if not self._is_hf_home_accessible(installer):
+            return self._assume_available_on_execution_nodes(installer, "download")
+
         hf_home_path = installer.system.hf_home_path
         logging.debug(f"Downloading HF model {self.model_name} into {hf_home_path / 'hub'}")
         disable_progress_bars()
@@ -597,6 +617,9 @@ class HFModel(Installable):
         return InstallStatusResult(True)
 
     def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
+        if not self._is_hf_home_accessible(installer):
+            return self._assume_available_on_execution_nodes(installer, "removal")
+
         hf_home_path = installer.system.hf_home_path
         logging.debug(f"Removing HF model {self.model_name} from {hf_home_path / 'hub'}")
         res = self.is_installed(installer)
@@ -616,6 +639,10 @@ class HFModel(Installable):
         return InstallStatusResult(True)
 
     def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        if not self._is_hf_home_accessible(installer):
+            self.installed_path = installer.system.hf_home_path
+            return InstallStatusResult(True)
+
         hf_home_path = installer.system.hf_home_path
         logging.debug(f"Checking if HF model {self.model_name} is already downloaded in {hf_home_path / 'hub'}")
         disable_progress_bars()

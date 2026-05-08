@@ -17,7 +17,7 @@
 
 from cloudai.core import Registry
 from cloudai.reporter import DSEReporter, PerTestReporter, StatusReporter, TarballReporter
-from cloudai.systems.kubernetes import KubernetesSystem
+from cloudai.systems.kubernetes import KubernetesInstaller, KubernetesSystem
 from cloudai.systems.lsf import LSFInstaller, LSFSystem
 from cloudai.systems.runai import RunAISystem
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
@@ -218,10 +218,11 @@ def test_json_gen_strategies():
 
 def test_installers():
     installers = Registry().installers_map
-    assert len(installers) == 5
+    assert len(installers) == 4
     assert installers["standalone"] == StandaloneInstaller
     assert installers["slurm"] == SlurmInstaller
     assert installers["lsf"] == LSFInstaller
+    assert installers["kubernetes"] == KubernetesInstaller
 
 
 def test_definitions():
