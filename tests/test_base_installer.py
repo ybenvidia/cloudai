@@ -398,6 +398,12 @@ class CustomDockerImage(DockerImage):
         super().__init__(url)
         self.calls: list[tuple[str, BaseInstaller]] = []
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CustomDockerImage) and self.url == other.url
+
+    def __hash__(self) -> int:
+        return hash((CustomDockerImage, self.url))
+
     def install(self, installer: BaseInstaller) -> InstallStatusResult:
         self.calls.append(("install", installer))
         return InstallStatusResult(True, "custom docker installed")
