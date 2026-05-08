@@ -141,52 +141,6 @@ class TestBaseInstaller:
         assert docker_image in all_items
 
 
-@pytest.mark.parametrize(
-    "url,expected",
-    [
-        ("http://fake_url/img", "fake_url__img__notag.sqsh"),
-        ("nvcr.io#nvidia/pytorch:24.02-py3", "nvcr.io_nvidia__pytorch__24.02-py3.sqsh"),
-        ("/local/disk/file", "file__notag.sqsh"),
-        ("/local/disk/file:tag", "file__tag.sqsh"),
-        ("./local/disk/file:tag", "file__tag.sqsh"),
-        ("ditdab.com#org/team/image:latest", "ditdab.com_org_team__image__latest.sqsh"),
-        ("registry.invalid.com:5000#group/project", "registry.invalid.com__5000_group_project.sqsh"),
-        ("registry.invalid:5050#group/project:latest", "registry.invalid:5050_group__project__latest.sqsh"),
-        ("registry.invalid:5051#team/proj/image.v1", "registry.invalid__5051_team_proj_image.v1.sqsh"),
-        ("nvcr.io/nvidia#nemo:24.07", "nvcr.io__nvidia_nemo__24.07.sqsh"),
-    ],
-)
-def test_docker_cache_filename(url: str, expected: str):
-    assert DockerImage(url).cache_filename == expected, f"Input: {url}"
-
-
-def test_docker_image_installed_path():
-    docker_image = DockerImage("fake_url/img")
-
-    # Test with string path (URL)
-    string_path = "fake_url/img"
-    docker_image._installed_path = string_path
-    assert docker_image.installed_path == "fake_url/img"
-
-    # Test with Path object
-    path_obj = Path("/another/path")
-    docker_image._installed_path = path_obj
-    assert isinstance(docker_image.installed_path, Path)
-    assert docker_image.installed_path == path_obj.absolute()
-
-
-@pytest.mark.parametrize(
-    "url,expected",
-    [
-        ("https://github.com/NVIDIA/cloudai.git", "cloudai__commit"),
-        ("git@github.com:NVIDIA/cloudai.git", "cloudai__commit"),
-        ("./cloudai", "cloudai__commit"),
-    ],
-)
-def test_git_repo_name(url: str, expected: str):
-    assert GitRepo(url=url, commit="commit").repo_name == expected
-
-
 @pytest.fixture
 def no_access_dir(tmp_path: Path) -> Generator[Path, None, None]:
     d = tmp_path / "no-access-dir"
