@@ -69,7 +69,7 @@ class LSFInstaller(BaseInstaller):
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
         if self.is_installable_type(item, DockerImage):
-            logging.info(f"Skipping installation of Docker image {item} in LSF system.")
+            logging.info(f"Skipping installation check for Docker image {item} in LSF system.")
             return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
         return self.slurm_installer.is_installed_one(item)
 
