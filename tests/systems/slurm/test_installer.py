@@ -17,7 +17,7 @@
 from pathlib import Path
 from subprocess import CompletedProcess
 from typing import cast
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -112,10 +112,12 @@ class TestInstallOnePythonExecutable:
     def test_venv_created(self, installer: SlurmInstaller, git: GitRepo):
         py = PythonExecutable(git)
         venv_path = installer.system.install_path / py.venv_name
-        installer._install_dependencies = Mock(return_value=InstallStatusResult(True))
-        with patch("subprocess.run") as mock_run:
+        with (
+            patch.object(PythonExecutable, "_install_dependencies", return_value=InstallStatusResult(True)),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_run.return_value = CompletedProcess(args=[], returncode=0)
-            res = installer._create_venv(py)
+            res = py._create_venv(installer)
         assert res.success
         mock_run.assert_called_once_with(["python", "-m", "venv", str(venv_path)], capture_output=True, text=True)
 
@@ -126,17 +128,18 @@ class TestInstallOnePythonExecutable:
         py = PythonExecutable(git)
         venv_path = installer.system.install_path / py.venv_name
 
-        if reqs_install_failure:
-            installer._install_dependencies = Mock(return_value=InstallStatusResult(False, "err"))
-
         def mock_run(*args, **kwargs):
             venv_path.mkdir()
             if failure_on_venv_creation and "venv" in args[0]:
                 return CompletedProcess(args=args, returncode=1, stderr="err")
             return CompletedProcess(args=args, returncode=0)
 
-        with patch("subprocess.run", side_effect=mock_run):
-            res = installer._create_venv(py)
+        dependencies_result = InstallStatusResult(False, "err") if reqs_install_failure else InstallStatusResult(True)
+        with (
+            patch.object(PythonExecutable, "_install_dependencies", return_value=dependencies_result),
+            patch("subprocess.run", side_effect=mock_run),
+        ):
+            res = py._create_venv(installer)
         assert not res.success
         if failure_on_venv_creation:
             assert res.message == "Failed to create venv:\nSTDOUT:\nNone\nSTDERR:\nerr"
@@ -150,7 +153,7 @@ class TestInstallOnePythonExecutable:
         venv_path.mkdir()
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = CompletedProcess(args=[], returncode=1, stderr="err")
-            res = installer._create_venv(py)
+            res = py._create_venv(installer)
         assert mock_run.call_count == 0
         assert res.success
         assert res.message == f"Virtual environment already exists at {venv_path}."
@@ -159,7 +162,7 @@ class TestInstallOnePythonExecutable:
         py = PythonExecutable(git)
         venv_path = installer.system.install_path / py.venv_name
         venv_path.mkdir()
-        res = installer._install_requirements(venv_path, installer.system.install_path / "requirements.txt")
+        res = py._install_requirements(venv_path, installer.system.install_path / "requirements.txt")
         assert not res.success
         assert (
             res.message
@@ -172,7 +175,9 @@ class TestInstallOnePythonExecutable:
         requirements_file.touch()
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = CompletedProcess(args=[], returncode=0)
-            res = installer._install_requirements(venv_path, requirements_file)
+            res = PythonExecutable(GitRepo(url="./git_url", commit="commit_hash"))._install_requirements(
+                venv_path, requirements_file
+            )
         assert res.success
         mock_run.assert_called_once_with(
             [str(venv_path / "bin" / "python"), "-m", "pip", "install", "-r", str(requirements_file)],
@@ -185,7 +190,9 @@ class TestInstallOnePythonExecutable:
         requirements_file.touch()
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = CompletedProcess(args=[], returncode=1, stderr="err")
-            res = installer._install_requirements(installer.system.install_path, requirements_file)
+            res = PythonExecutable(GitRepo(url="./git_url", commit="commit_hash"))._install_requirements(
+                installer.system.install_path, requirements_file
+            )
         assert not res.success
         assert res.message == "Failed to install dependencies from requirements.txt: err"
 
@@ -200,7 +207,7 @@ class TestInstallOnePythonExecutable:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = CompletedProcess(args=[], returncode=0, stdout=f"{git.commit}\n", stderr="")
-            res = installer._install_python_executable(py)
+            res = py.install(installer)
 
         assert res.success
         assert py.git_repo.installed_path == installer.system.install_path / py.git_repo.repo_name
@@ -208,7 +215,7 @@ class TestInstallOnePythonExecutable:
 
     def test_is_installed_no_repo(self, installer: SlurmInstaller, git: GitRepo):
         py = PythonExecutable(git)
-        res = installer._is_python_executable_installed(py)
+        res = py.is_installed(installer)
         assert not res.success
         assert res.message == f"Git repository {py.git_repo.url} not cloned"
         assert not (installer.system.install_path / py.git_repo.repo_name).exists()
@@ -219,7 +226,7 @@ class TestInstallOnePythonExecutable:
     def test_is_installed_no_venv(self, installer: SlurmInstaller, git: GitRepo):
         py = PythonExecutable(git)
         (installer.system.install_path / py.git_repo.repo_name).mkdir()
-        res = installer._is_python_executable_installed(py)
+        res = py.is_installed(installer)
         assert not res.success
         assert res.message == f"Virtual environment not created for {py.git_repo.url}"
         assert py.git_repo.installed_path == installer.system.install_path / py.git_repo.repo_name
@@ -231,7 +238,7 @@ class TestInstallOnePythonExecutable:
         py = PythonExecutable(git)
         (installer.system.install_path / py.git_repo.repo_name).mkdir()
         (installer.system.install_path / py.venv_name).mkdir()
-        res = installer._is_python_executable_installed(py)
+        res = py.is_installed(installer)
         assert res.success
         assert res.message == "Python executable installed"
         assert py.git_repo.installed_path == installer.system.install_path / py.git_repo.repo_name
@@ -242,7 +249,7 @@ class TestInstallOnePythonExecutable:
     def test_uninstall_no_venv(self, installer: SlurmInstaller, git: GitRepo):
         py = PythonExecutable(git)
         py.venv_path = installer.system.install_path / py.venv_name
-        res = installer._uninstall_python_executable(py)
+        res = py.uninstall(installer)
         assert res.success
         assert res.message == f"Virtual environment {py.venv_name} is not created."
 
@@ -251,7 +258,7 @@ class TestInstallOnePythonExecutable:
         (installer.system.install_path / py.venv_name).mkdir()
         (installer.system.install_path / py.venv_name / "file").touch()
         py.venv_path = installer.system.install_path / py.venv_name
-        res = installer._uninstall_python_executable(py)
+        res = py.uninstall(installer)
         assert res.success
         assert not (installer.system.install_path / py.venv_name).exists()
         assert not py.venv_path
@@ -263,16 +270,17 @@ class TestInstallOnePythonExecutable:
 
         py = PythonExecutable(git, project_subpath=Path("subdir"), dependencies_from_pyproject=True)
 
-        installer._install_pyproject = Mock(return_value=InstallStatusResult(True))
-        installer._install_requirements = Mock(return_value=InstallStatusResult(True))
-
         py.git_repo.installed_path = repo_dir
 
-        res = installer._install_dependencies(py)
+        with (
+            patch.object(PythonExecutable, "_install_pyproject", return_value=InstallStatusResult(True)) as pyproject,
+            patch.object(PythonExecutable, "_install_requirements", return_value=InstallStatusResult(True)) as reqs,
+        ):
+            res = py._install_dependencies(installer)
 
         assert res.success
-        installer._install_pyproject.assert_called_once_with(installer.system.install_path / py.venv_name, subdir)
-        installer._install_requirements.assert_not_called()
+        pyproject.assert_called_once_with(installer.system.install_path / py.venv_name, subdir)
+        reqs.assert_not_called()
 
     def test_install_python_executable_prefers_requirements_txt(
         self, installer: SlurmInstaller, git: GitRepo, setup_repo
@@ -281,15 +289,17 @@ class TestInstallOnePythonExecutable:
 
         py = PythonExecutable(git, project_subpath=Path("subdir"), dependencies_from_pyproject=False)
 
-        installer._install_requirements = Mock(return_value=InstallStatusResult(True))
-        installer._install_pyproject = Mock(return_value=InstallStatusResult(True))
-
         py.git_repo.installed_path = repo_dir
 
-        res = installer._install_dependencies(py)
+        with (
+            patch.object(PythonExecutable, "_install_requirements", return_value=InstallStatusResult(True)) as reqs,
+            patch.object(PythonExecutable, "_install_pyproject", return_value=InstallStatusResult(True)) as pyproject,
+        ):
+            res = py._install_dependencies(installer)
 
         assert res.success
-        installer._install_pyproject.assert_not_called()
+        pyproject.assert_not_called()
+        reqs.assert_called_once()
 
 
 class TestInstallOneFile:

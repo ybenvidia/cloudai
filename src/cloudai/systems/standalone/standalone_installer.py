@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from cloudai.core import BaseInstaller, Installable, InstallStatusResult
+from cloudai.core import BaseInstaller, InstallStatusResult
 
 
 class StandaloneInstaller(BaseInstaller):
@@ -34,15 +34,3 @@ class StandaloneInstaller(BaseInstaller):
             return InstallStatusResult(False, f"Required binaries not installed: {missing_str}.")
 
         return InstallStatusResult(True)
-
-    def install_one(self, item: Installable) -> InstallStatusResult:
-        return super().install_one(item)
-
-    def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        return super().uninstall_one(item)
-
-    def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        return super().is_installed_one(item)
-
-    def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        return super().mark_as_installed_one(item)

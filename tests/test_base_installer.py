@@ -34,6 +34,8 @@ from cloudai.core import (
 )
 from cloudai.systems.kubernetes.kubernetes_installer import KubernetesInstaller
 from cloudai.systems.kubernetes.kubernetes_system import KubernetesSystem
+from cloudai.systems.lsf import LSFInstaller, LSFSystem
+from cloudai.systems.runai import RunAIInstaller, RunAISystem
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 from cloudai.systems.slurm.docker_image_cache_manager import DockerImageCacheResult
 from cloudai.systems.standalone.standalone_installer import StandaloneInstaller
@@ -390,8 +392,74 @@ class CustomInstallable(Installable):
 
 
 class CustomDockerImage(DockerImage):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.calls: list[tuple[str, BaseInstaller]] = []
+
     def install(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("install", installer))
         return InstallStatusResult(True, "custom docker installed")
+
+    def uninstall(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("uninstall", installer))
+        return InstallStatusResult(True, "custom docker uninstalled")
+
+    def is_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("is_installed", installer))
+        return InstallStatusResult(True, "custom docker is installed")
+
+    def mark_as_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("mark_as_installed", installer))
+        return InstallStatusResult(True, "custom docker marked as installed")
+
+
+class CustomHFModel(HFModel):
+    def __init__(self, model_name: str):
+        super().__init__(model_name)
+        self.calls: list[tuple[str, BaseInstaller]] = []
+
+    def install(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("install", installer))
+        return InstallStatusResult(True, "custom hf installed")
+
+    def uninstall(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("uninstall", installer))
+        return InstallStatusResult(True, "custom hf uninstalled")
+
+    def is_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("is_installed", installer))
+        return InstallStatusResult(True, "custom hf is installed")
+
+    def mark_as_installed(self, installer: BaseInstaller) -> InstallStatusResult:
+        self.calls.append(("mark_as_installed", installer))
+        return InstallStatusResult(True, "custom hf marked as installed")
+
+
+@pytest.fixture(
+    params=[
+        "k8s",
+        "slurm",
+        "lsf",
+        "runai",
+        "standalone",
+    ]
+)
+def dispatch_contract_installer(
+    request: pytest.FixtureRequest,
+    k8s_system: KubernetesSystem,
+    slurm_system: SlurmSystem,
+    runai_system: RunAISystem,
+    standalone_system,
+    tmp_path: Path,
+) -> BaseInstaller:
+    installers = {
+        "k8s": KubernetesInstaller(k8s_system),
+        "slurm": SlurmInstaller(slurm_system),
+        "lsf": LSFInstaller(LSFSystem(name="test_lsf", install_path=tmp_path / "install", output_path=tmp_path)),
+        "runai": RunAIInstaller(runai_system),
+        "standalone": StandaloneInstaller(standalone_system),
+    }
+    return installers[request.param]
 
 
 def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
@@ -428,10 +496,48 @@ def test_custom_installable_is_dispatched_without_system_installer_support(stand
     assert ("mark_as_installed", installer) in item.calls
 
 
-def test_builtin_installable_subclass_uses_custom_operation(installer: KubernetesInstaller | SlurmInstaller):
-    item = CustomDockerImage("fake_url/img")
+@pytest.mark.parametrize(
+    ("item_type", "expected_messages"),
+    [
+        (
+            CustomDockerImage,
+            [
+                "custom docker installed",
+                "custom docker uninstalled",
+                "custom docker is installed",
+                "custom docker marked as installed",
+            ],
+        ),
+        (
+            CustomHFModel,
+            [
+                "custom hf installed",
+                "custom hf uninstalled",
+                "custom hf is installed",
+                "custom hf marked as installed",
+            ],
+        ),
+    ],
+)
+def test_builtin_installable_subclass_uses_custom_operations(
+    dispatch_contract_installer: BaseInstaller,
+    item_type: type[CustomDockerImage] | type[CustomHFModel],
+    expected_messages: list[str],
+):
+    item = item_type("fake_url/img" if item_type is CustomDockerImage else "fake/model")
 
-    res = installer.install_one(item)
+    results = [
+        dispatch_contract_installer.install_one(item),
+        dispatch_contract_installer.uninstall_one(item),
+        dispatch_contract_installer.is_installed_one(item),
+        dispatch_contract_installer.mark_as_installed_one(item),
+    ]
 
-    assert res.success
-    assert res.message == "custom docker installed"
+    assert [result.success for result in results] == [True, True, True, True]
+    assert [result.message for result in results] == expected_messages
+    assert item.calls == [
+        ("install", dispatch_contract_installer),
+        ("uninstall", dispatch_contract_installer),
+        ("is_installed", dispatch_contract_installer),
+        ("mark_as_installed", dispatch_contract_installer),
+    ]
