@@ -133,6 +133,18 @@ class DockerImage(Installable):
     def installed_path(self, value: Union[str, Path]) -> None:
         self._installed_path = value
 
+    def install(self, installer: "BaseInstaller") -> InstallStatusResult:
+        return InstallStatusResult(True, f"Docker image {self} does not require installation.")
+
+    def uninstall(self, installer: "BaseInstaller") -> InstallStatusResult:
+        return InstallStatusResult(True, f"Docker image {self} does not require uninstallation.")
+
+    def is_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        return InstallStatusResult(True, f"Docker image {self} is available through the container runtime.")
+
+    def mark_as_installed(self, installer: "BaseInstaller") -> InstallStatusResult:
+        return InstallStatusResult(True, f"Docker image {self} marked as installed.")
+
 
 class GitRepo(Installable, BaseModel):
     """Git repository object."""

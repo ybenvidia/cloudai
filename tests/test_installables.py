@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cloudai.core import BaseInstaller, File, GitRepo, InstallStatusResult, PythonExecutable
+from cloudai.core import BaseInstaller, DockerImage, File, GitRepo, InstallStatusResult, PythonExecutable
 
 
 @pytest.fixture
@@ -167,6 +167,22 @@ class TestGitRepoSubmodules:
         assert result is False
         assert "bla" in message
         assert mock_run.call_count == 1
+
+
+class TestDockerImage:
+    def test_default_operations_are_noop(self, slurm_system):
+        installer = BaseInstaller(slurm_system)
+        image = DockerImage("fake_url/img")
+
+        results = [
+            installer.install_one(image),
+            installer.is_installed_one(image),
+            installer.uninstall_one(image),
+            installer.mark_as_installed_one(image),
+        ]
+
+        assert all(result.success for result in results)
+        assert image.installed_path == image.url
 
 
 class TestFile:
