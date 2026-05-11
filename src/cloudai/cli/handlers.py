@@ -110,7 +110,7 @@ def prepare_installation(
             installables.extend(test.installables)
 
     registry = Registry()
-    installer_class = registry.installers_map.get(system.scheduler)
+    installer_class = registry.installers_map.get(system.scheduler, BaseInstaller)
     if installer_class is None:
         raise NotImplementedError(f"No installer available for scheduler: {system.scheduler}")
     installer = installer_class(system)

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,17 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
-from cloudai.core import (
-    BaseInstaller,
-    DockerImage,
-    File,
-    GitRepo,
-    Installable,
-    InstallStatusResult,
-    PythonExecutable,
-)
+from cloudai.core import BaseInstaller, DockerImage, Installable, InstallStatusResult
 from cloudai.systems.slurm import SlurmInstaller, SlurmSystem
 
 from .lsf_system import LSFSystem
@@ -64,44 +54,21 @@ class LSFInstaller(BaseInstaller):
                 raise EnvironmentError(f"Required binary '{binary}' is not installed.")
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        logging.debug(f"Attempt to install {item}")
-
         if isinstance(item, DockerImage):
-            logging.info(f"Skipping installation of Docker image {item} in LSF system.")
-            return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
-        elif isinstance(item, GitRepo):
-            return self.slurm_installer._install_one_git_repo(item)
-        elif isinstance(item, PythonExecutable):
-            return self.slurm_installer._install_python_executable(item)
-        elif isinstance(item, File):
-            return self.slurm_installer.install_one(item)
-
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+            return super().install_one(item)
+        return self.slurm_installer.install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        logging.debug(f"Attempt to uninstall {item!r}")
-        if isinstance(item, PythonExecutable):
-            return self.slurm_installer._uninstall_python_executable(item)
-        elif isinstance(item, GitRepo):
-            return self.slurm_installer._uninstall_git_repo(item)
-        elif isinstance(item, File):
-            return self.slurm_installer.uninstall_one(item)
-
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+        if isinstance(item, DockerImage):
+            return super().uninstall_one(item)
+        return self.slurm_installer.uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
         if isinstance(item, DockerImage):
-            logging.info(f"Skipping installation check for Docker image {item} in LSF system.")
-            return InstallStatusResult(True, "Docker image installation skipped for LSF system.")
-        elif isinstance(item, GitRepo):
-            return self.slurm_installer.is_installed_one(item)
-        elif isinstance(item, PythonExecutable):
-            return self.slurm_installer._is_python_executable_installed(item)
-        elif isinstance(item, File):
-            return self.slurm_installer.is_installed_one(item)
-
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
+            return super().is_installed_one(item)
+        return self.slurm_installer.is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        logging.debug(f"Marking {item!r} as installed.")
+        if isinstance(item, DockerImage):
+            return super().mark_as_installed_one(item)
         return self.slurm_installer.mark_as_installed_one(item)
