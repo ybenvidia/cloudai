@@ -165,4 +165,7 @@ exclude_also = ["@abstractmethod"]
 
 [tool.pyright]
 include = ["src", "tests"]
-exclude = ["src/cloudai/workloads/nemo_run/cloudai_nemorun.py"]
+exclude = [
+  "src/cloudai/workloads/nemo_run/cloudai_nemorun.py",
+  "src/cloudai/workloads/aiconfig/runtime",
+]
