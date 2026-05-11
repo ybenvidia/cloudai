@@ -24,6 +24,25 @@ if TYPE_CHECKING:
 
 
 class Installable(ABC):
+    """
+    Base class for dependencies that CloudAI installs before running workloads.
+
+    Custom installables should:
+
+    - Implement ``__eq__`` and ``__hash__``. They define the installable's
+      identity and are used to deduplicate dependencies across tests. Use only
+      stable configuration values, not mutable installation state.
+    - Stop there if a custom installer handles this installable by overriding
+      ``install_one``, ``uninstall_one``, ``is_installed_one``, or
+      ``mark_as_installed_one``.
+    - Also override ``install``, ``uninstall``, ``is_installed``, and optionally
+      ``mark_as_installed`` if the installable should be handled by the default
+      ``BaseInstaller``. These methods receive the active installer instance and
+      must return ``InstallStatusResult``.
+
+    Default operation methods return an unsupported ``InstallStatusResult``.
+    """
+
     @abstractmethod
     def __eq__(self, other: object) -> bool: ...
 
