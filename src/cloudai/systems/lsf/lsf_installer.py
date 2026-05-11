@@ -54,21 +54,21 @@ class LSFInstaller(BaseInstaller):
                 raise EnvironmentError(f"Required binary '{binary}' is not installed.")
 
     def install_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, DockerImage):
+        if isinstance(item, DockerImage):
             return super().install_one(item)
         return self.slurm_installer.install_one(item)
 
     def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, DockerImage):
+        if isinstance(item, DockerImage):
             return super().uninstall_one(item)
         return self.slurm_installer.uninstall_one(item)
 
     def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, DockerImage):
+        if isinstance(item, DockerImage):
             return super().is_installed_one(item)
         return self.slurm_installer.is_installed_one(item)
 
     def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        if self.is_installable_type(item, DockerImage):
+        if isinstance(item, DockerImage):
             return super().mark_as_installed_one(item)
         return self.slurm_installer.mark_as_installed_one(item)

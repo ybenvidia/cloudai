@@ -19,9 +19,7 @@ import os
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Iterable, Optional, TypeVar, final
-
-from typing_extensions import TypeGuard
+from typing import Iterable, Optional, final
 
 from cloudai.util import prepare_output_dir
 
@@ -29,8 +27,6 @@ from .installables import Installable, InstallStatusResult
 from .system import System
 
 TASK_LIMIT_THRESHOLD = 256
-
-T = TypeVar("T", bound=Installable)
 
 
 class BaseInstaller:
@@ -128,10 +124,6 @@ class BaseInstaller:
     def all_items(self, items: Iterable[Installable], with_duplicates: bool = False) -> list[Installable]:
         all_items = list(items) + self.system.system_installables()
         return list(set(all_items)) if not with_duplicates else all_items
-
-    @staticmethod
-    def is_installable_type(item: Installable, expected_type: type[T]) -> TypeGuard[T]:
-        return type(item) is expected_type
 
     @final
     def is_installed(self, items: Iterable[Installable]) -> InstallStatusResult:
