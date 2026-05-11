@@ -19,7 +19,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from cloudai.workloads.aiconfig.predictor import predict_disagg_single, predict_ifb_single
+from cloudai.workloads.aiconfig.runtime.predictor import predict_disagg_single, predict_ifb_single
 
 
 class _Summary:

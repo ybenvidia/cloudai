@@ -21,6 +21,7 @@ test_template_name = "Aiconfigurator"
 [cmd_args]
 model_name = "LLAMA3.1_70B"
 system = "h100_sxm"
+version = "1.0.0rc3"
 # backend and version use defaults
 isl = 3000
 osl = 150

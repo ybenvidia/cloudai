@@ -39,6 +39,7 @@ from ._core.installables import (
     HFModel,
     Installable,
     InstallStatusResult,
+    PythonEnvironment,
     PythonExecutable,
 )
 from ._core.job_status_result import JobStatusResult
@@ -87,6 +88,7 @@ __all__ = [
     "Parser",
     "PerTestReporter",
     "PredictorConfig",
+    "PythonEnvironment",
     "PythonExecutable",
     "Registry",
     "ReportGenerationStrategy",
