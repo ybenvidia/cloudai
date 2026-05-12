@@ -25,6 +25,8 @@ from cloudai.util import parse_time_limit
 
 from .nixl_ep import GENERATED_PLAN_FILE_NAME, NixlEPCmdArgs, NixlEPTestDefinition
 
+LAUNCHER_SCRIPT_FILE_NAME = "nixl-ep-launch.sh"
+
 
 @dataclass(frozen=True)
 class NixlEPLaunch:
@@ -64,27 +66,13 @@ class NixlEPSlurmCommandGenStrategy(SlurmCommandGenStrategy):
             raise ValueError("NIXL EP Slurm command generation requires num_processes_per_node to be an integer.")
         return num_processes_per_node
 
-    def _append_sbatch_directives(self, batch_script_content: list[str]) -> None:
-        super()._append_sbatch_directives(batch_script_content)
-        batch_script_content.extend(
-            [
-                "",
-                "nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )",
-                "nodes_array=($nodes)",
-                "master_node=${nodes_array[0]}",
-                "master_ip=$(srun --nodes=1 --ntasks=1 -w \"$master_node\" hostname --ip-address | awk '{print $1}')",
-                "",
-                "echo Nodes: $SLURM_JOB_NODELIST",
-                "echo Num Nodes: ${#nodes[@]}",
-                "echo Master Node: $master_node",
-                "echo Master IP: $master_ip",
-                "",
-            ]
-        )
-
     @property
     def env_vars_path(self) -> Path:
         return self.test_run.output_path / "env_vars.sh"
+
+    @property
+    def launcher_script_path(self) -> Path:
+        return self.test_run.output_path / LAUNCHER_SCRIPT_FILE_NAME
 
     def node_log_path(self, node_idx: int) -> Path:
         return self.test_run.output_path / f"nixl-ep-node-{node_idx}.log"
@@ -290,7 +278,7 @@ wait_for_phase_completion() {{
     def _background_launches_lines(self, launches: tuple[NixlEPLaunch, ...]) -> list[str]:
         lines: list[str] = []
         for launch in launches:
-            lines.extend([self._render_launch(launch) + " &", "worker_pids+=($!)"])
+            lines.extend([self._render_launch(launch) + " &", "active_srun_count=$((active_srun_count + 1))"])
         return lines
 
     @staticmethod
@@ -308,8 +296,13 @@ wait_for_phase_completion() {{
         return [
             "",
             "rc=0",
-            'for pid in "${worker_pids[@]}"; do',
-            '    wait "$pid" || rc=$?',
+            'while [ "$active_srun_count" -gt 0 ]; do',
+            "    wait -n",
+            "    wait_rc=$?",
+            "    active_srun_count=$((active_srun_count - 1))",
+            '    if [ "$wait_rc" -ne 0 ] && [ "$rc" -eq 0 ]; then',
+            "        rc=$wait_rc",
+            "    fi",
             "done",
             "",
             *cls._finish_with_rc_lines(),
@@ -355,12 +348,12 @@ wait_for_phase_completion() {{
         primary_launch = stage.launches[0]
         master_service_lines = self._wait_for_master_services_lines() if has_followers else []
         header_lines = [
-            "worker_pids=()",
+            "active_srun_count=0",
             "",
             'echo "Starting initial NIXL EP stage on the master node..."',
             self._render_launch(primary_launch) + " &",
             "primary_pid=$!",
-            "worker_pids+=($primary_pid)",
+            "active_srun_count=$((active_srun_count + 1))",
         ]
         return header_lines + master_service_lines + self._initial_follower_launch_lines(stage)
 
@@ -375,20 +368,71 @@ wait_for_phase_completion() {{
         ]
         return header_lines + self._background_launches_lines(stage.launches)
 
-    def _gen_srun_command(self) -> str:
-        self._write_env_vars_file()
-        self._write_plan_file()
+    def _launcher_prologue_lines(self) -> list[str]:
+        return [
+            "#!/bin/bash",
+            "",
+            "nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )",
+            'nodes_array=("${nodes[@]}")',
+            "master_node=${nodes_array[0]}",
+            'export SLURM_JOB_MASTER_NODE="${SLURM_JOB_MASTER_NODE:-$master_node}"',
+            "master_ip=$(srun --nodes=1 --ntasks=1 -w \"$master_node\" hostname --ip-address | awk '{print $1}')",
+            "",
+            'echo "Nodes: $SLURM_JOB_NODELIST"',
+            'echo "Num Nodes: ${#nodes[@]}"',
+            'echo "Master Node: $master_node"',
+            'echo "Master IP: $master_ip"',
+            "",
+        ]
 
+    @staticmethod
+    def _cleanup_function_lines() -> list[str]:
+        return [
+            "cleanup_nixl_ep() {",
+            "    local pids",
+            '    pids="$(jobs -pr)"',
+            '    if [ -z "$pids" ]; then',
+            "        return 0",
+            "    fi",
+            '    echo "Cleaning up NIXL EP background launches..."',
+            "    kill -TERM $pids >/dev/null 2>&1 || true",
+            "    sleep 2",
+            '    pids="$(jobs -pr)"',
+            '    if [ -n "$pids" ]; then',
+            "        kill -KILL $pids >/dev/null 2>&1 || true",
+            "    fi",
+            "    wait >/dev/null 2>&1 || true",
+            "}",
+            "",
+            "on_nixl_ep_signal() {",
+            '    local rc="$1"',
+            "    cleanup_nixl_ep",
+            '    exit "$rc"',
+            "}",
+            "",
+            "trap cleanup_nixl_ep EXIT",
+            "trap 'on_nixl_ep_signal 130' INT",
+            "trap 'on_nixl_ep_signal 143' TERM",
+            "",
+        ]
+
+    def _launcher_body(self) -> str:
         stages = [stage for stage in self.plan_stages if stage.launches]
         if not stages:
             raise ValueError("NIXL EP plan does not launch any non-negative ranks.")
 
         first_stage = stages[0]
         if len(stages) == 1 and len(first_stage.launches) == 1:
-            return self._render_single_stage(first_stage)
+            lines = [
+                *self._launcher_prologue_lines(),
+                *self._cleanup_function_lines(),
+                self._render_single_stage(first_stage),
+            ]
+            return "\n".join(lines)
 
         has_followers = self._has_follower_launches(stages)
-        lines = self._plan_helper_function_lines(
+        lines = [*self._launcher_prologue_lines(), *self._cleanup_function_lines()]
+        lines += self._plan_helper_function_lines(
             has_followers=has_followers,
             has_multiple_stages=len(stages) > 1,
         )
@@ -399,3 +443,14 @@ wait_for_phase_completion() {{
 
         lines += self._wait_for_workers_lines()
         return "\n".join(lines)
+
+    def _write_launcher_script(self) -> None:
+        self.launcher_script_path.parent.mkdir(parents=True, exist_ok=True)
+        self.launcher_script_path.write_text(self._launcher_body() + "\n", encoding="utf-8")
+        self.launcher_script_path.chmod(0o755)
+
+    def _gen_srun_command(self) -> str:
+        self._write_env_vars_file()
+        self._write_plan_file()
+        self._write_launcher_script()
+        return f"bash {shlex.quote(str(self.launcher_script_path.absolute()))}"
