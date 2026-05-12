@@ -77,6 +77,14 @@ class NixlEPSlurmCommandGenStrategy(SlurmCommandGenStrategy):
     def node_log_path(self, node_idx: int) -> Path:
         return self.test_run.output_path / f"nixl-ep-node-{node_idx}.log"
 
+    @property
+    def stderr_path(self) -> Path:
+        return self.test_run.output_path / "stderr.txt"
+
+    @property
+    def master_ip_path(self) -> Path:
+        return self.test_run.output_path / "nixl-ep-master-ip.txt"
+
     def resolve_plan_path(self) -> str:
         return str((self.test_run.output_path / GENERATED_PLAN_FILE_NAME).absolute())
 
@@ -219,7 +227,7 @@ wait_for_master_services() {{
 }}"""
 
     def _launch_srun_prefix(self, node_idx: int) -> str:
-        target_arg = "--nodelist=$SLURM_JOB_MASTER_NODE" if node_idx == 0 else f"--relative={node_idx}"
+        target_arg = f'--nodelist="${{nodes_array[{node_idx}]}}"'
         parts = [
             *self.gen_srun_prefix(with_num_nodes=False),
             "--overlap",
@@ -236,7 +244,10 @@ wait_for_master_services() {{
         log_file = self.node_log_path(launch.node_idx).absolute()
         open_mode_arg = " --open-mode=append" if launch.append_output else ""
         script = f"source {shlex.quote(str(env_file))}; {command}".replace('"', '\\"')
-        return f'{self._launch_srun_prefix(launch.node_idx)}{open_mode_arg} --output={log_file} bash -c "{script}"'
+        return (
+            f"{self._launch_srun_prefix(launch.node_idx)}{open_mode_arg} "
+            f'--output={log_file} --error={log_file} bash -c "{script}"'
+        )
 
     def generate_wait_for_phase_completion_function(self) -> str:
         timeout = self.phase_transition_timeout_seconds
@@ -369,17 +380,31 @@ wait_for_phase_completion() {{
         return header_lines + self._background_launches_lines(stage.launches)
 
     def _launcher_prologue_lines(self) -> list[str]:
+        num_nodes, node_list = self.get_cached_nodes_spec()
+        if node_list:
+            node_setup_lines = [f"nodes_array=( {' '.join(shlex.quote(node) for node in node_list)} )"]
+        else:
+            node_setup_lines = [
+                "nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )",
+                f'nodes_array=("${{nodes[@]:0:{num_nodes}}}")',
+            ]
+
+        master_ip_path = shlex.quote(str(self.master_ip_path.absolute()))
+        stderr_path = shlex.quote(str(self.stderr_path.absolute()))
         return [
             "#!/bin/bash",
             "",
-            "nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )",
-            'nodes_array=("${nodes[@]}")',
+            *node_setup_lines,
             "master_node=${nodes_array[0]}",
             'export SLURM_JOB_MASTER_NODE="${SLURM_JOB_MASTER_NODE:-$master_node}"',
-            "master_ip=$(srun --nodes=1 --ntasks=1 -w \"$master_node\" hostname --ip-address | awk '{print $1}')",
+            (
+                f'srun --nodes=1 --ntasks=1 -N1 --nodelist="$master_node" '
+                f"--output={master_ip_path} --error={stderr_path} hostname --ip-address"
+            ),
+            f"master_ip=$(awk '{{print $1}}' {master_ip_path})",
             "",
             'echo "Nodes: $SLURM_JOB_NODELIST"',
-            'echo "Num Nodes: ${#nodes[@]}"',
+            'echo "Num Nodes: ${#nodes_array[@]}"',
             'echo "Master Node: $master_node"',
             'echo "Master IP: $master_ip"',
             "",

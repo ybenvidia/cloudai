@@ -136,6 +136,19 @@ def read_launcher_script(strategy: NixlEPSlurmCommandGenStrategy) -> str:
     return strategy.launcher_script_path.read_text(encoding="utf-8")
 
 
+def assert_launcher_sruns_are_explicitly_routed(launcher_script: str) -> None:
+    srun_lines = [line for line in launcher_script.splitlines() if line.startswith("srun ")]
+    assert srun_lines
+    assert "--relative=" not in launcher_script
+    assert "exec >>" not in launcher_script
+    assert "exec 2>>" not in launcher_script
+    for line in srun_lines:
+        assert "--output=" in line
+        assert "--error=" in line
+        assert "--nodelist=" in line
+        assert " -N1 " in line
+
+
 def test_num_processes_per_node_returns_integer(
     nixl_ep: NixlEPTestDefinition,
     slurm_system: SlurmSystem,
@@ -490,8 +503,8 @@ def test_gen_srun_command_single_node(nixl_ep: NixlEPTestDefinition, slurm_syste
     assert launcher_script.count("--num-processes 2") == 1
     assert launcher_script.count("--tcp-server $master_ip") == 2
     assert launcher_script.count("--open-mode=append") == 2
-    assert "--nodelist=$SLURM_JOB_MASTER_NODE" in launcher_script
-    assert "--relative=1" not in launcher_script
+    assert '--nodelist="${nodes_array[0]}"' in launcher_script
+    assert_launcher_sruns_are_explicitly_routed(launcher_script)
     assert "trap cleanup_nixl_ep EXIT" in launcher_script
     assert "jobs -pr" in launcher_script
 
@@ -727,8 +740,9 @@ def test_gen_srun_command_multi_node_public_single_expansion_waits_for_phase_bef
     assert "wait_for_phase_completion()" in launcher_script
     assert 'wait_for_phase_completion "0"' in launcher_script
     assert launcher_script.count("--num-processes 4") == 2
-    assert launcher_script.count("--relative=1") == 1
-    assert launcher_script.count("--nodelist=$SLURM_JOB_MASTER_NODE") == 1
+    assert '--nodelist="${nodes_array[0]}"' in launcher_script
+    assert '--nodelist="${nodes_array[1]}"' in launcher_script
+    assert_launcher_sruns_are_explicitly_routed(launcher_script)
     assert launcher_script.count("--tcp-server $master_ip") == 1
     assert launcher_script.count("--open-mode=append") == 1
 
@@ -760,7 +774,9 @@ def test_gen_srun_command_multi_node_single_stage_starts_followers(
     assert "wait_for_master_services()" in launcher_script
     assert "wait_for_phase_completion()" not in launcher_script
     assert launcher_script.count("--num-processes 4") == 2
-    assert launcher_script.count("--relative=1") == 1
+    assert '--nodelist="${nodes_array[0]}"' in launcher_script
+    assert '--nodelist="${nodes_array[1]}"' in launcher_script
+    assert_launcher_sruns_are_explicitly_routed(launcher_script)
     assert launcher_script.count("--tcp-server $master_ip") == 1
 
 
