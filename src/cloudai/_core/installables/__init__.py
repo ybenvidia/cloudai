@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,30 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name = "aiconfigurator_disagg_demo"
-description = "Aiconfigurator disaggregated predictor demo"
-test_template_name = "Aiconfigurator"
+from .base import Installable, InstallStatusResult
+from .docker_image import DockerImage
+from .file import File
+from .git_repo import GitRepo
+from .hf_model import HFModel
+from .python_environment import PythonEnvironment
+from .python_executable import PythonExecutable
 
-[cmd_args]
-model_name = "LLAMA3.1_70B"
-system = "h100_sxm"
-version = "1.0.0rc3"
-# backend and version use defaults
-isl = 3000
-osl = 150
-
-  [cmd_args.disagg]
-  p_tp = 4
-  p_pp = 1
-  p_dp = 1
-  p_bs = 1
-  p_workers = 1
-
-  d_tp = 4
-  d_pp = 1
-  d_dp = 1
-  d_bs = 256
-  d_workers = 1
-
-  prefill_correction_scale = 1.0
-  decode_correction_scale = 1.0
+__all__ = [
+    "DockerImage",
+    "File",
+    "GitRepo",
+    "HFModel",
+    "InstallStatusResult",
+    "Installable",
+    "PythonEnvironment",
+    "PythonExecutable",
+]

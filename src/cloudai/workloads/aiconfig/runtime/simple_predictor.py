@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,7 +91,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _run_agg(ns: argparse.Namespace) -> dict:
-    from cloudai.workloads.aiconfig.predictor import predict_ifb_single
+    from predictor import predict_ifb_single  # type: ignore[reportMissingImports]
 
     if ns.batch_size is None or ns.ctx_tokens is None:
         raise ValueError("--batch-size and --ctx-tokens are required in agg mode")
@@ -121,7 +121,7 @@ def _run_agg(ns: argparse.Namespace) -> dict:
 
 
 def _run_disagg(ns: argparse.Namespace) -> dict:
-    from cloudai.workloads.aiconfig.predictor import predict_disagg_single
+    from predictor import predict_disagg_single  # type: ignore[reportMissingImports]
 
     required = ["p_tp", "p_pp", "p_dp", "p_bs", "p_workers", "d_tp", "d_pp", "d_dp", "d_bs", "d_workers"]
     missing = [k for k in required if getattr(ns, k) is None]

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,8 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cloudai.core import HFModel
-from cloudai.util.hf_model_manager import HFModelManager
+from cloudai.core import BaseInstaller, HFModel
 
 
 @pytest.fixture
@@ -28,42 +27,42 @@ def hf_model() -> HFModel:
     return HFModel(model_name="some_model_name")
 
 
-def test_download(hf_model: HFModel, tmp_path: Path) -> None:
+@pytest.fixture
+def installer(slurm_system, tmp_path: Path) -> BaseInstaller:
+    slurm_system.hf_home_path = tmp_path
+    return BaseInstaller(slurm_system)
+
+
+def test_download(hf_model: HFModel, installer: BaseInstaller) -> None:
     assert hf_model._installed_path is None
 
-    with patch("cloudai.util.hf_model_manager.snapshot_download", return_value=str("/real/path")):
-        HFModelManager(root_path=tmp_path).download_model(hf_model)
+    with patch("huggingface_hub.snapshot_download", return_value=str("/real/path")):
+        hf_model.install(installer)
 
     assert hf_model.installed_path == Path("/real/path")
 
 
-def test_download_raises(hf_model: HFModel, tmp_path: Path) -> None:
-    with patch(
-        "cloudai.util.hf_model_manager.snapshot_download",
-        side_effect=Exception("some error message"),
-    ):
-        result = HFModelManager(root_path=tmp_path).download_model(hf_model)
+def test_download_raises(hf_model: HFModel, installer: BaseInstaller) -> None:
+    with patch("huggingface_hub.snapshot_download", side_effect=Exception("some error message")):
+        result = hf_model.install(installer)
 
     assert not result.success
     assert "some error message" in result.message
     assert hf_model._installed_path is None
 
 
-def test_is_downloaded(hf_model: HFModel, tmp_path: Path) -> None:
-    with patch("cloudai.util.hf_model_manager.snapshot_download", return_value=str("/real/path")):
-        result = HFModelManager(root_path=tmp_path).is_model_downloaded(hf_model)
+def test_is_downloaded(hf_model: HFModel, installer: BaseInstaller) -> None:
+    with patch("huggingface_hub.snapshot_download", return_value=str("/real/path")):
+        result = hf_model.is_installed(installer)
 
     assert result.success
     assert result.message == "/real/path"
     assert hf_model.installed_path == Path("/real/path")
 
 
-def test_is_downloaded_raises(hf_model: HFModel, tmp_path: Path) -> None:
-    with patch(
-        "cloudai.util.hf_model_manager.snapshot_download",
-        side_effect=Exception("some error message"),
-    ):
-        result = HFModelManager(root_path=tmp_path).is_model_downloaded(hf_model)
+def test_is_downloaded_raises(hf_model: HFModel, installer: BaseInstaller) -> None:
+    with patch("huggingface_hub.snapshot_download", side_effect=Exception("some error message")):
+        result = hf_model.is_installed(installer)
 
     assert not result.success
     assert "some error message" in result.message

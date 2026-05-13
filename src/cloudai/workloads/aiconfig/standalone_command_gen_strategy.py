@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import sys
 from pathlib import Path
 from typing import cast
 
@@ -51,12 +50,12 @@ class AiconfiguratorStandaloneCommandGenStrategy(CommandGenStrategy):
         stdout_txt = Path(out_dir) / "stdout.txt"
         stderr_txt = Path(out_dir) / "stderr.txt"
 
-        python_exec = sys.executable
+        python_exec = tdef.python_environment.python_path(self.system.install_path)
+        predictor_script = Path(__file__).with_name("runtime") / "simple_predictor.py"
 
         base_cmd = [
             python_exec,
-            "-m",
-            "cloudai.workloads.aiconfig.simple_predictor",
+            predictor_script.resolve(),
             "--model-name",
             args.model_name,
             "--system",

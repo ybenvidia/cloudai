@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from cloudai.core import CmdArgs, Installable, TestDefinition
+from cloudai.core import CmdArgs, Installable, PythonEnvironment, TestDefinition
 
 
 class Agg(BaseModel):
@@ -61,8 +61,6 @@ class Disagg(BaseModel):
 class AiconfiguratorCmdArgs(CmdArgs):
     """Command arguments for Aiconfigurator workload with nested agg/disagg configs."""
 
-    python_executable: str = "python"
-
     model_name: str
     system: str
     backend: str = "trtllm"
@@ -89,5 +87,13 @@ class AiconfiguratorTestDefinition(TestDefinition):
     cmd_args: AiconfiguratorCmdArgs
 
     @property
+    def python_environment(self) -> PythonEnvironment:
+        return PythonEnvironment(
+            name="aiconfigurator",
+            python_version="3.10",
+            requirements=["aiconfigurator~=0.5.0"],
+        )
+
+    @property
     def installables(self) -> list[Installable]:
-        return []
+        return [self.python_environment]

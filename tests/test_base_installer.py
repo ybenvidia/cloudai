@@ -17,7 +17,7 @@
 import shutil
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any, Generator, cast
+from typing import Generator, cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -139,52 +139,6 @@ class TestBaseInstaller:
         all_items = installer.all_items([docker_image, docker_image])
         assert len(all_items) == 2
         assert docker_image in all_items
-
-
-@pytest.mark.parametrize(
-    "url,expected",
-    [
-        ("http://fake_url/img", "fake_url__img__notag.sqsh"),
-        ("nvcr.io#nvidia/pytorch:24.02-py3", "nvcr.io_nvidia__pytorch__24.02-py3.sqsh"),
-        ("/local/disk/file", "file__notag.sqsh"),
-        ("/local/disk/file:tag", "file__tag.sqsh"),
-        ("./local/disk/file:tag", "file__tag.sqsh"),
-        ("ditdab.com#org/team/image:latest", "ditdab.com_org_team__image__latest.sqsh"),
-        ("registry.invalid.com:5000#group/project", "registry.invalid.com__5000_group_project.sqsh"),
-        ("registry.invalid:5050#group/project:latest", "registry.invalid:5050_group__project__latest.sqsh"),
-        ("registry.invalid:5051#team/proj/image.v1", "registry.invalid__5051_team_proj_image.v1.sqsh"),
-        ("nvcr.io/nvidia#nemo:24.07", "nvcr.io__nvidia_nemo__24.07.sqsh"),
-    ],
-)
-def test_docker_cache_filename(url: str, expected: str):
-    assert DockerImage(url).cache_filename == expected, f"Input: {url}"
-
-
-def test_docker_image_installed_path():
-    docker_image = DockerImage("fake_url/img")
-
-    # Test with string path (URL)
-    string_path = "fake_url/img"
-    docker_image._installed_path = string_path
-    assert docker_image.installed_path == "fake_url/img"
-
-    # Test with Path object
-    path_obj = Path("/another/path")
-    docker_image._installed_path = path_obj
-    assert isinstance(docker_image.installed_path, Path)
-    assert docker_image.installed_path == path_obj.absolute()
-
-
-@pytest.mark.parametrize(
-    "url,expected",
-    [
-        ("https://github.com/NVIDIA/cloudai.git", "cloudai__commit"),
-        ("git@github.com:NVIDIA/cloudai.git", "cloudai__commit"),
-        ("./cloudai", "cloudai__commit"),
-    ],
-)
-def test_git_repo_name(url: str, expected: str):
-    assert GitRepo(url=url, commit="commit").repo_name == expected
 
 
 @pytest.fixture
@@ -316,25 +270,31 @@ class TestSuccessIsPopulated:
 
 
 @pytest.fixture(params=["k8s", "slurm"])
-def installer(
-    request: Any, k8s_system: KubernetesSystem, slurm_system: SlurmSystem
-) -> KubernetesInstaller | SlurmInstaller:
-    installer = KubernetesInstaller(k8s_system) if request.param == "k8s" else SlurmInstaller(slurm_system)
+def installer(request: pytest.FixtureRequest, k8s_system: KubernetesSystem, slurm_system: SlurmSystem):
+    installers = {
+        "k8s": KubernetesInstaller(k8s_system),
+        "slurm": SlurmInstaller(slurm_system),
+    }
+    installer = installers[request.param]
 
     installer.system.install_path.mkdir(parents=True)
     installer._check_low_thread_environment = lambda threshold=None: False
     return installer
 
 
-def test_check_supported(installer: KubernetesInstaller | SlurmInstaller):
+def test_check_supported(installer: KubernetesInstaller | SlurmInstaller, monkeypatch: pytest.MonkeyPatch):
     if isinstance(installer, SlurmInstaller):
         installer._install_docker_image = lambda item: DockerImageCacheResult(True)
         installer._uninstall_docker_image = lambda item: DockerImageCacheResult(True)
         installer.docker_image_cache_manager.check_docker_image_exists = Mock(return_value=DockerImageCacheResult(True))
-    installer._install_python_executable = lambda item: InstallStatusResult(True)
-    installer._uninstall_python_executable = lambda item: InstallStatusResult(True)
-    installer._is_python_executable_installed = lambda item: InstallStatusResult(True)
-    installer.hf_model_manager = Mock()
+    monkeypatch.setattr(PythonExecutable, "install", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "uninstall", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "is_installed", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(PythonExecutable, "mark_as_installed", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "install", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "uninstall", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "is_installed", lambda item, context: InstallStatusResult(True))
+    monkeypatch.setattr(HFModel, "mark_as_installed", lambda item, context: InstallStatusResult(True))
 
     git = GitRepo(url="./git_url", commit="commit_hash")
     items = [DockerImage("fake_url/img"), PythonExecutable(git), HFModel("model_name"), File(Path(__file__))]
@@ -350,24 +310,3 @@ def test_check_supported(installer: KubernetesInstaller | SlurmInstaller):
 
         res = installer.mark_as_installed_one(item)
         assert res.success, f"Failed to mark as installed {item} for {installer.__class__.__name__=} {res.message=}"
-
-
-class MyInstallable(Installable):
-    def __eq__(self, other: object) -> bool:
-        return True
-
-    def __hash__(self) -> int:
-        return hash("MyInstallable")
-
-
-def test_check_unsupported(installer: KubernetesInstaller | SlurmInstaller):
-    unsupported = MyInstallable()
-    for func in [
-        installer.install_one,
-        installer.uninstall_one,
-        installer.is_installed_one,
-        installer.mark_as_installed_one,
-    ]:
-        res = func(unsupported)
-        assert not res.success
-        assert res.message == f"Unsupported item type: {type(unsupported)}"

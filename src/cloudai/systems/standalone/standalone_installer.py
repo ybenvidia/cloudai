@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from cloudai.core import BaseInstaller, Installable, InstallStatusResult
+from cloudai.core import BaseInstaller, InstallStatusResult
 
 
 class StandaloneInstaller(BaseInstaller):
@@ -23,7 +23,10 @@ class StandaloneInstaller(BaseInstaller):
     PREREQUISITES = ("ps", "kill")
 
     def _check_prerequisites(self) -> InstallStatusResult:
-        super()._check_prerequisites()  # TODO: if fails, print out missing prerequisites
+        res = super()._check_prerequisites()
+        if not res.success:
+            return res
+
         missing_binaries = []
         for binary in self.PREREQUISITES:
             if not self._is_binary_installed(binary):
@@ -34,15 +37,3 @@ class StandaloneInstaller(BaseInstaller):
             return InstallStatusResult(False, f"Required binaries not installed: {missing_str}.")
 
         return InstallStatusResult(True)
-
-    def install_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
-
-    def uninstall_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
-
-    def is_installed_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")
-
-    def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
-        return InstallStatusResult(False, f"Unsupported item type: {type(item)}")

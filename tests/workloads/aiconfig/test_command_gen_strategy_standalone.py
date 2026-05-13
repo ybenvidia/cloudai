@@ -30,11 +30,7 @@ from cloudai.workloads.aiconfig import (
 from cloudai.workloads.aiconfig.aiconfigurator import Agg, Disagg
 
 
-def test_gen_exec_command_writes_repro_script_and_returns_bash(
-    tmp_path: Path, standalone_system: StandaloneSystem, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("sys.executable", "/tmp/python")
-
+def test_gen_exec_command_writes_repro_script_and_returns_bash(tmp_path: Path, standalone_system: StandaloneSystem):
     tdef = AiconfiguratorTestDefinition(
         name="aiconfig",
         description="desc",
@@ -77,8 +73,9 @@ def test_gen_exec_command_writes_repro_script_and_returns_bash(
     assert content.startswith("#!/usr/bin/env bash")
     assert "set -euo pipefail" in content
 
-    assert "/tmp/python" in content
-    assert "-m cloudai.workloads.aiconfig.simple_predictor" in content
+    assert str(tdef.python_environment.python_path(standalone_system.install_path)) in content
+    assert "PYTHONPATH" not in content
+    assert "runtime/simple_predictor.py" in content
     assert "--model-name" in content and "LLAMA3.1_70B" in content
     assert "--system" in content and "h200_sxm" in content
     assert "--mode" in content and "disagg" in content
@@ -89,11 +86,7 @@ def test_gen_exec_command_writes_repro_script_and_returns_bash(
     assert str((out_dir.resolve() / "stderr.txt")) in content
 
 
-def test_gen_exec_command_agg_branch(
-    tmp_path: Path, standalone_system: StandaloneSystem, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("sys.executable", "/tmp/python")
-
+def test_gen_exec_command_agg_branch(tmp_path: Path, standalone_system: StandaloneSystem):
     tdef = AiconfiguratorTestDefinition(
         name="aiconfig",
         description="desc",
@@ -119,6 +112,27 @@ def test_gen_exec_command_agg_branch(
     assert "--mode" in content and "agg" in content
     assert "--batch-size" in content and "8" in content
     assert "--ctx-tokens" in content and "16" in content
+
+
+def test_installables_include_aiconfigurator_python_environment():
+    tdef = AiconfiguratorTestDefinition(
+        name="aiconfig",
+        description="desc",
+        test_template_name="Aiconfigurator",
+        cmd_args=AiconfiguratorCmdArgs(
+            model_name="LLAMA3.1_70B",
+            system="h200_sxm",
+            backend="trtllm",
+            version="0.20.0",
+            isl=4000,
+            osl=500,
+            agg=Agg(batch_size=8, ctx_tokens=16),
+        ),
+    )
+
+    [env] = tdef.installables
+    assert env == tdef.python_environment
+    assert tdef.python_environment.requirements == ["aiconfigurator~=0.5.0"]
 
 
 def test_cmd_args_requires_exactly_one_mode() -> None:

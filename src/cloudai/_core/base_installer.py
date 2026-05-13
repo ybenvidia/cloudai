@@ -18,20 +18,18 @@ import logging
 import os
 import shutil
 import subprocess
-from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable, Optional, final
 
 from cloudai.util import prepare_output_dir
 
-from .install_status_result import InstallStatusResult
-from .installables import Installable
+from .installables import Installable, InstallStatusResult
 from .system import System
 
 TASK_LIMIT_THRESHOLD = 256
 
 
-class BaseInstaller(ABC):
+class BaseInstaller:
     """
     Base class for an Installer that manages the installation and uninstallation of installable items.
 
@@ -232,15 +230,6 @@ class BaseInstaller(ABC):
 
     @final
     def uninstall(self, items: Iterable[Installable]) -> InstallStatusResult:
-        """
-        Uninstall installable items.
-
-        Args:
-            items (Iterable[Installable]): Items to uninstall.
-
-        Returns:
-            InstallStatusResult: Result containing the uninstallation status and error message if any.
-        """
         logging.debug(f"Going to uninstall {len(set(items))} uniq items (total {len(list(items))}).")
         logging.info(f"Going to uninstall {len(set(items))} items.")
 
@@ -265,15 +254,6 @@ class BaseInstaller(ABC):
 
     @final
     def mark_as_installed(self, items: Iterable[Installable]) -> InstallStatusResult:
-        """
-        Mark the installable items as installed.
-
-        Args:
-            items (Iterable[Installable]): Items to mark as installed.
-
-        Returns:
-            InstallStatusResult: Result containing the status and error message if any.
-        """
         install_results: dict[Installable, InstallStatusResult] = {}
         for item in self.all_items(items):
             result = self.mark_as_installed_one(item)
@@ -283,14 +263,14 @@ class BaseInstaller(ABC):
 
         return InstallStatusResult(True, "All items marked as installed successfully.", install_results)
 
-    @abstractmethod
-    def install_one(self, item: Installable) -> InstallStatusResult: ...
+    def install_one(self, item: Installable) -> InstallStatusResult:
+        return item.install(self)
 
-    @abstractmethod
-    def uninstall_one(self, item: Installable) -> InstallStatusResult: ...
+    def uninstall_one(self, item: Installable) -> InstallStatusResult:
+        return item.uninstall(self)
 
-    @abstractmethod
-    def is_installed_one(self, item: Installable) -> InstallStatusResult: ...
+    def is_installed_one(self, item: Installable) -> InstallStatusResult:
+        return item.is_installed(self)
 
-    @abstractmethod
-    def mark_as_installed_one(self, item: Installable) -> InstallStatusResult: ...
+    def mark_as_installed_one(self, item: Installable) -> InstallStatusResult:
+        return item.mark_as_installed(self)
